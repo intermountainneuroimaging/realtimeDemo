@@ -14,7 +14,6 @@ No FSL / dcm2niix / scanner needed.
 -----------------------------------------------------------------------------"""
 import os
 import sys
-import glob
 import tempfile
 import warnings
 import numpy as np
@@ -33,9 +32,16 @@ rc = mock.main(['--config', CONFIG, '--out', tmp, '--no-delay', '--clean', '--nv
 cfg = mock.load_cfg(CONFIG)
 min_size = int(cfg.get('minExpectedDicomSize', 300000))
 ref_info = mrt.dicom_header_info(mock.DEFAULT_REFERENCE)
+pattern = str(cfg.get('dicomNamePattern', 'demo_{RUN:06d}_{TR:06d}.dcm'))
+run = int(np.ravel(cfg.get('runNum', [1]))[0])
 
 events = mrt.read_events_tsv(os.path.join(HERE, 'study_design', 'HcpMotor_acq-ap_events.tsv'))
-files = sorted(glob.glob(os.path.join(tmp, '001_000001_*.dcm')))
+# build the expected filename per instance directly from the config's naming
+# pattern (not a hardcoded literal, and not a sorted glob() -- dicomNamePattern
+# isn't required to be zero-padded, so alphabetical sort order can't be assumed
+# to match chronological/instance order)
+files = [os.path.join(tmp, pattern.format(RUN=run, SCAN=run, TR=i)) for i in range(1, 121)]
+assert all(os.path.exists(f) for f in files), "not all expected volumes were written"
 
 import pydicom
 # pydicom parses Enhanced multi-frame natively -> (nFrames, rows, cols) directly,
@@ -64,7 +70,7 @@ pydicom_shapes = {pydicom.dcmread(f).pixel_array.shape for f in files[:3]}
 checks = {}
 checks['scanner_returned_0'] = (rc == 0)
 checks['nvols_written'] = len(files) == 120
-checks['naming_matches_pattern'] = os.path.basename(files[0]) == '001_000001_000001.dcm'
+checks['naming_matches_pattern'] = os.path.basename(files[0]) == pattern.format(RUN=run, SCAN=run, TR=1)
 checks['size_over_min'] = all(os.path.getsize(f) >= min_size for f in files[:5])
 checks['multiframe_shape_matches_reference'] = (pydicom_shapes == {expected_shape})
 _v = mrt.unpack_frames(mrt.pack_frames(vols[5]))

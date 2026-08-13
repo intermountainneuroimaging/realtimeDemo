@@ -50,7 +50,7 @@ fallbackNVols = 179        # used only if the stream can't report its length
 
 # ---- scanner (DICOM) streaming - used when dsAccessionNumber = 'None' ----
 subjectNum = 101
-dicomNamePattern = "001_{RUN:06d}_{TR:06d}.dcm"
+dicomNamePattern = "demo_{RUN:06d}_{TR:06d}.dcm"   # demo_SeriesNumber_InstanceNumber (zero-padded)
 minExpectedDicomSize = 300000
 runNum = [1]
 

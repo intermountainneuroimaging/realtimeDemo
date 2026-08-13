@@ -195,7 +195,7 @@ def main(argv=None):
 
     run = args.run if args.run is not None else int(np.ravel(cfg.get('runNum', [1]))[0]) \
         if not isinstance(cfg.get('runNum', [1]), str) else 1
-    pattern = str(cfg.get('dicomNamePattern', '001_{RUN:06d}_{TR:06d}.dcm'))
+    pattern = str(cfg.get('dicomNamePattern', 'demo_{RUN:06d}_{TR:06d}.dcm'))
     min_size = int(cfg.get('minExpectedDicomSize', 300000))
     task = str(cfg.get('taskName', 'HcpMotor'))
     condA = str(cfg.get('glmCondA', 'left_hand'))

@@ -125,21 +125,37 @@ filename — conventions vary by site), and copies it into `dicomDir/` renamed
 to match `dicomNamePattern` exactly. It only renames — dcm2niix already
 handles Enhanced multi-frame DICOM natively, so no pixel data is touched.
 
+By default `RUN` in the output filename is each file's own real `SeriesNumber`
+— not a fixed value — so bridging everything in the drop folder is
+collision-safe (an SBRef series and a bold series land in `dicomDir/` under
+distinct `RUN` labels, never overwriting each other):
+
 ```bash
-# bridge whatever's already in the drop folder, then keep watching for more:
+# bridge every series found, each kept separate by its own SeriesNumber:
 python dicom_bridge.py --config conf/taskActivation.toml \
-  --source /path/to/real/scanner/drop/folder --series 3
+  --source /path/to/real/scanner/drop/folder
 
 # one-shot backfill (bridge what's there now, then exit):
 python dicom_bridge.py --config conf/taskActivation.toml \
-  --source /path/to/real/scanner/drop/folder --series 3 --once
+  --source /path/to/real/scanner/drop/folder --once
 ```
 
-`--series` is the DICOM `SeriesNumber` of the run you want (read the header of
-one file to find it — e.g. with `pydicom`), **not** the toml's `runNum`/`RUN`
-token, which is just the output filename's run label. Run this alongside the
-analysis the same way you'd run `mock_scanner.py`, in a second host terminal,
-pointed at the same `dicomDir` the container has mounted.
+Pass `--series` to bridge only one run (read the header of one file to find
+its `SeriesNumber` — e.g. with `pydicom`), and/or `--run` to relabel it to a
+fixed value instead of using the real `SeriesNumber` — useful when the toml's
+`runNum` needs to stay the same across sessions whose real series numbers
+change. `--run` requires `--series`, since forcing one `RUN` value while
+bridging multiple series would collide:
+
+```bash
+# only series 3, relabeled as RUN 1 (matches a toml with runNum = [1]):
+python dicom_bridge.py --config conf/taskActivation.toml \
+  --source /path/to/real/scanner/drop/folder --series 3 --run 1
+```
+
+Run this alongside the analysis the same way you'd run `mock_scanner.py`, in a
+second host terminal, pointed at the same `dicomDir` the container has
+mounted.
 
 > Real scanner files carry real `PatientName`/`PatientID`/etc. until rt-cloud's
 > own `anonymize=True` (already set in `taskActivation.py`'s
@@ -156,6 +172,68 @@ set that key in the toml to change it) and raises a clear error if nothing
 arrives in time, so start the scanner / `dicom_bridge.py` / `mock_scanner.py`
 first. A numeric `demoStep` always overrides auto-inference and behaves exactly
 as before.
+
+### Running `dicom_bridge.py` as a background service (systemd)
+
+For routine scanning you don't want a terminal open babysitting the bridge.
+It's a lightweight, single-threaded polling loop (a directory listing once a
+second, plus a cheap header-only read per new file), so `systemd` can just run
+it in the background indefinitely — run it with no `--series`/`--run` (the
+default: bridge everything, `RUN` = each file's own real `SeriesNumber`) so it
+never needs restarting or reconfiguring between scan sessions.
+
+Create `/etc/systemd/system/dicom-bridge.service` (adjust the paths, and the
+`python3` path if `pydicom`/`numpy` live in a venv or conda env rather than
+the system interpreter):
+
+```ini
+[Unit]
+Description=RT-Cloud dicom_bridge.py (rename real scanner DICOMs for rt-cloud)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=youruser
+WorkingDirectory=/full/path/to/taskActivation
+ExecStart=/usr/bin/python3 /full/path/to/taskActivation/dicom_bridge.py \
+  --config /full/path/to/taskActivation/conf/taskActivation.toml \
+  --source /path/to/real/scanner/drop/folder \
+  --dest /path/to/dicomDir
+Restart=on-failure
+RestartSec=5
+
+# "silently": no visible terminal either way -- systemd always runs this
+# detached. By default stdout/stderr go to the journal (recommended, so you
+# can still debug with journalctl); uncomment below to drop output entirely.
+# StandardOutput=null
+# StandardError=null
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then enable and start it:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now dicom-bridge.service
+```
+
+Useful commands:
+
+```bash
+sudo systemctl status dicom-bridge.service     # running? recent restarts?
+journalctl -u dicom-bridge.service -f          # live log (unless StandardOutput=null above)
+sudo systemctl restart dicom-bridge.service    # e.g. after editing --source/--dest
+sudo systemctl stop dicom-bridge.service
+```
+
+`Type=simple` + `Restart=on-failure` is enough here — `dicom_bridge.py` has no
+startup handshake to wait on, and a plain restart is the right response to a
+transient error (e.g. the source share briefly unavailable). `User=` should be
+whichever account can read the scanner's drop folder and write into the
+`dicomDir` the analysis container has bind-mounted.
 
 
 

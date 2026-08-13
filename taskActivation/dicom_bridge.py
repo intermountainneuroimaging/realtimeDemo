@@ -32,20 +32,31 @@ initDicomBidsStream call) strips them on read — the same as a real scanner's
 raw feed would. This script doesn't change that; it's expected, not a new
 exposure introduced here.
 
+RUN in the output filename is, by default, each file's own real SeriesNumber
+-- not a fixed value -- so bridging every series present is collision-safe
+(series 2 and series 3 land in dicomDir/ with distinct RUN labels, never the
+same filename). Pass --series to bridge only one series, and/or --run to
+force a fixed RUN label instead (e.g. to keep the toml's runNum stable across
+sessions whose real series numbers change); --run requires --series, since
+forcing one RUN value while bridging multiple series would collide.
+
 Usage:
-  # one-shot: bridge whatever's already in the drop folder, then exit
+  # bridge every series found; each gets its own RUN = its real SeriesNumber
+  python dicom_bridge.py --config conf/taskActivation.toml \\
+      --source /Volumes/sambashare/some_session
+
+  # only series 3, one-shot backfill of what's already there
   python dicom_bridge.py --config conf/taskActivation.toml \\
       --source /Volumes/sambashare/some_session --series 3 --once
 
-  # continuous: bridge existing files, then keep watching for new ones
+  # only series 3, but relabel it as RUN 1 (matches a toml with runNum = [1])
   python dicom_bridge.py --config conf/taskActivation.toml \\
-      --source /Volumes/sambashare/some_session --series 3
+      --source /Volumes/sambashare/some_session --series 3 --run 1
 -----------------------------------------------------------------------------"""
 import os
 import sys
 import time
 import argparse
-import numpy as np
 
 import mock_scanner as mock   # reuses its tiny rtCommon-free toml reader
 import rt_analysis as mrt
@@ -58,14 +69,24 @@ def main(argv=None):
     ap.add_argument('--config', default=os.path.join(HERE, 'conf', 'taskActivation.toml'))
     ap.add_argument('--source', required=True, help='real scanner drop folder to watch')
     ap.add_argument('--dest', default=None, help='dicomDir to bridge into (default: project dicomDir)')
-    ap.add_argument('--series', type=int, required=True,
-                    help='DICOM SeriesNumber to bridge (read from each file\'s header, not its filename)')
-    ap.add_argument('--run', type=int, default=None, help='RUN token for the output filename (default from config runNum)')
+    ap.add_argument('--series', type=int, default=None,
+                    help='only bridge this DICOM SeriesNumber (read from each file\'s header, not '
+                         'its filename); omit to bridge every series found, each kept separate by '
+                         'its own SeriesNumber in the output filename')
+    ap.add_argument('--run', type=int, default=None,
+                    help='force this RUN value in the output filename instead of each file\'s own '
+                         'SeriesNumber. Requires --series -- forcing one RUN value while bridging '
+                         'multiple series would collide in dicomDir/')
     ap.add_argument('--poll-interval', type=float, default=1.0, help='seconds between rescans in watch mode')
     ap.add_argument('--settle-secs', type=float, default=0.5,
                     help='wait this long and re-check file size before treating a file as fully written')
     ap.add_argument('--once', action='store_true', help='bridge whatever matches now, then exit (no watching)')
     args = ap.parse_args(argv)
+
+    if args.run is not None and args.series is None:
+        print("[bridge] --run requires --series (forcing one RUN value while bridging "
+              "multiple series would collide in dicomDir/)")
+        return 1
 
     try:
         import pydicom
@@ -73,14 +94,14 @@ def main(argv=None):
         print("[bridge] pydicom is required (pip install pydicom)"); return 1
 
     cfg = mock.load_cfg(args.config)
-    pattern = str(cfg.get('dicomNamePattern', '001_{RUN:06d}_{TR:06d}.dcm'))
-    run = args.run if args.run is not None else int(np.ravel(cfg.get('runNum', [1]))[0]) \
-        if not isinstance(cfg.get('runNum', [1]), str) else 1
+    pattern = str(cfg.get('dicomNamePattern', 'demo_{RUN:06d}_{TR:06d}.dcm'))
     dest_dir = args.dest or os.path.join(HERE, 'dicomDir')
     os.makedirs(dest_dir, exist_ok=True)
 
-    print(f"[bridge] watching {args.source}  series={args.series}  -> {dest_dir}  "
-          f"pattern={pattern} (RUN={run})" + ("  (one-shot)" if args.once else ""))
+    series_desc = f"series={args.series}" if args.series is not None else "series=ALL"
+    run_desc = f"RUN forced to {args.run}" if args.run is not None else "RUN = each file's own SeriesNumber"
+    print(f"[bridge] watching {args.source}  {series_desc}  -> {dest_dir}  "
+          f"pattern={pattern}  {run_desc}" + ("  (one-shot)" if args.once else ""))
 
     seen = set()   # source filenames already bridged (or confirmed not-yet-complete this pass)
 
@@ -103,13 +124,14 @@ def main(argv=None):
             print(f"[bridge] skip (unreadable, retry later) {os.path.basename(src_path)}: {e}")
             return False
         series_no = int(getattr(ds_head, 'SeriesNumber', -1))
-        if series_no != args.series:
-            return True   # not our series; don't retry, but don't error either
+        if args.series is not None and series_no != args.series:
+            return True   # not the one we want; don't retry, but don't error either
         instance = int(getattr(ds_head, 'InstanceNumber', -1))
         if instance < 1:
             print(f"[bridge] skip (no InstanceNumber) {os.path.basename(src_path)}")
             return False
-        fname = pattern.format(RUN=run, SCAN=run, TR=instance)
+        run_for_file = args.run if args.run is not None else series_no
+        fname = pattern.format(RUN=run_for_file, SCAN=run_for_file, TR=instance)
         dst_path = os.path.join(dest_dir, fname)
         if os.path.exists(dst_path):
             return True
@@ -122,7 +144,7 @@ def main(argv=None):
         tmp = dst_path + '.part'
         ds.save_as(tmp, write_like_original=False)
         os.replace(tmp, dst_path)
-        print(f"[bridge] vol {instance:3d}  {os.path.basename(src_path)}  ->  {fname}")
+        print(f"[bridge] series {series_no} vol {instance:3d}  {os.path.basename(src_path)}  ->  {fname}")
         return True
 
     def scan_once():
