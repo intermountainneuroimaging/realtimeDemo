@@ -1,0 +1,76 @@
+"""-----------------------------------------------------------------------------
+test_mock_scanner.py — offline test of the mock DICOM scanner.
+
+Writes mosaic DICOMs with mock_scanner, then de-mosaics them and confirms:
+  * files are named per dicomNamePattern and exceed minExpectedDicomSize,
+  * each DICOM de-mosaics to the 64x64x27 grid (nibabel = dcm2niix proxy),
+  * mosaic tiling round-trips exactly,
+  * the streamed series carries recoverable task activation (condA / condB
+    peaks land in their injected regions).
+No FSL / dcm2niix / scanner needed.
+-----------------------------------------------------------------------------"""
+import os
+import sys
+import glob
+import tempfile
+import warnings
+import numpy as np
+
+import rt_analysis as mrt
+import mock_scanner as mock
+warnings.filterwarnings('ignore')
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+TR = 2.0
+tmp = tempfile.mkdtemp(prefix='mockdcm_')
+
+# run the mock scanner (fast, no delay) using the default synthetic HcpMotor source
+rc = mock.main(['--config', os.path.join(HERE, 'conf', 'taskActivation.toml'),
+                '--out', tmp, '--no-delay', '--clean', '--nvols', '120'])
+
+events = mrt.read_events_tsv(os.path.join(HERE, 'study_design', 'HcpMotor_acq-ap_events.tsv'))
+files = sorted(glob.glob(os.path.join(tmp, '001_000001_*.dcm')))
+
+import pydicom
+from nibabel.nicom import dicomreaders
+# de-mosaic with OUR exact inverse tiler (orientation matches how we built it)
+vols = [mrt.mosaic_to_volume(pydicom.dcmread(f).pixel_array, mock.MOSAIC_SLICES) for f in files]
+Y4 = np.stack(vols, -1).astype(np.float32)
+shape = Y4.shape[:3]; nV = Y4.shape[3]; R = shape[0]
+
+# injected regions (must mirror synthetic_series)
+A_rows = range(R//2+6, R//2+11); B_rows = range(R//2-11, R//2-6)
+
+X, names = mrt.make_glm_design(events, nV, TR, 1)
+bmask = mrt.compute_brain_mask(Y4[..., 0]).flatten(); midx = np.where(bmask)[0]
+flatY = Y4.reshape(-1, nV).T[:, midx]
+con = mrt.glm_beta_contrast(X, flatY, names, 'left_hand', 'right_hand', zscore=True)
+cmap = np.zeros(bmask.size, np.float32); cmap[midx] = con; cmap = cmap.reshape(shape)
+pA = np.unravel_index(int(np.nanargmax(cmap)), shape)   # most condA>condB
+pB = np.unravel_index(int(np.nanargmin(cmap)), shape)   # most condB>condA
+
+# nibabel (dcm2niix proxy) parseability + shape
+nib_shapes = {dicomreaders.mosaic_to_nii(pydicom.dcmread(f)).shape for f in files[:3]}
+
+checks = {}
+checks['scanner_returned_0'] = (rc == 0)
+checks['nvols_written'] = len(files) == 120
+checks['naming_matches_pattern'] = os.path.basename(files[0]) == '001_000001_000001.dcm'
+checks['size_over_min'] = all(os.path.getsize(f) >= 300000 for f in files[:5])
+checks['demosaic_shape_64x64x27'] = (nib_shapes == {(64, 64, 27)})
+_v = mrt.mosaic_to_volume(mrt.volume_to_mosaic(vols[5]), mock.MOSAIC_SLICES)
+checks['mosaic_roundtrip_exact'] = np.array_equal(_v, vols[5])
+checks['condA_peak_in_A_region'] = pA[0] in A_rows
+checks['condB_peak_in_B_region'] = pB[0] in B_rows
+checks['contrast_regions_separated'] = abs(pA[0] - pB[0]) >= 8
+
+print("\n==== mock DICOM scanner ====")
+print(f"wrote {len(files)} DICOMs to {tmp}")
+print(f"condA(left) peak {pA} in rows {list(A_rows)} | condB(right) peak {pB} in rows {list(B_rows)}")
+print()
+for k, v in checks.items():
+    print(f"  [{'PASS' if v else 'FAIL'}] {k}")
+ok = all(bool(v) for v in checks.values())
+print("\nRESULT:", "ALL PASS" if ok else "SEE FAILURES")
+import shutil; shutil.rmtree(tmp, ignore_errors=True)
+sys.exit(0 if ok else 1)

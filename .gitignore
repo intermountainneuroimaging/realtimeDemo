@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+
+# downloaded/cached data and scanner input (regenerated on demand)
+taskActivation/openneuro_cache/
+taskActivation/dicomDir/*.dcm
+taskActivation/dicomDir/*.dcm.part
+
+# run outputs
+outDir/
