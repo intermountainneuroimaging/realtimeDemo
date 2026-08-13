@@ -59,10 +59,18 @@ regressed out of the reward−punishment contrast.
 ## Testing with a mock scanner (`dataSource = "dicom"`)
 
 To exercise the real-time DICOM streaming path without a scanner, `mock_scanner.py`
-writes one **Siemens-mosaic DICOM per volume** into the watched `dicomDir/` at TR
-cadence, matching the project's `dicomNamePattern`. RT-Cloud picks each file up,
-converts it with dcm2niix, and feeds it to the analysis exactly as a real scanner
-would.
+writes one **Enhanced-multi-frame DICOM per volume** (all slices as separate
+frames in one file, matching modern Siemens XA-line reconstructions — not the
+older single-frame "mosaic" format) into the watched `dicomDir/` at TR cadence,
+matching the project's `dicomNamePattern`. RT-Cloud picks each file up, converts
+it with dcm2niix, and feeds it to the analysis exactly as a real scanner would.
+
+Geometry (rows/columns/slice count, pixel spacing) and TR are **read from a
+reference DICOM at runtime** (`--reference-dicom`, default
+`templates/enhanced_bold_template.dcm` — a fully anonymized real 88×88×56,
+TR=1000ms acquisition), not hardcoded, so the synthetic data matches whatever
+scanner/protocol produced the reference. Point `--reference-dicom` at a
+different real (or anonymized) DICOM to match a different site/protocol.
 
 Set `dataSource = "dicom"` in the toml, start the analysis, then in a **second
 terminal on the host** (not inside the container) run the mock scanner pointed
@@ -72,12 +80,22 @@ at the same `dicomDir` the container has mounted:
 # synthetic run built from the events file (condA/condB regions activate):
 python mock_scanner.py --config conf/taskActivation.toml --out $DICOM_DIR
 
-# or replay a real 4D NIfTI (each volume resampled to the 64x64x27 mosaic grid):
+# or replay a real 4D NIfTI (each volume resampled to the reference's grid):
 python mock_scanner.py --config conf/taskActivation.toml --out $DICOM_DIR --source bold.nii.gz
 
 # fast, no-scanner-cadence write (for offline checks):
 python mock_scanner.py --config conf/taskActivation.toml --out $DICOM_DIR --no-delay --clean
+
+# match a different scanner/protocol's geometry+TR instead of the bundled template:
+python mock_scanner.py --config conf/taskActivation.toml --out $DICOM_DIR \
+  --reference-dicom /path/to/an/anonymized/real.dcm
 ```
+
+TR precedence: `--tr` (explicit override) > numeric `demoStep` in the toml >
+the reference DICOM's own `RepetitionTime` > a `2.0`s last-resort fallback.
+Set `demoStep = "auto"` in the toml to skip straight to the reference DICOM's
+TR (see [Live scanning](#live-scanning) below — the same `"auto"` value also
+works for the live analysis itself).
 
 `mock_scanner.py` only needs `numpy`, `nibabel`, and `pydicom` (`pip install
 pydicom`) — it has no rtCommon dependency, so it runs directly on the host, not
@@ -87,8 +105,57 @@ the same host folder you bind-mounted to the container's `dicomDir/`, so files
 written there appear to the container immediately. Files are written atomically
 (`.part` then rename) so the watcher only sees complete volumes.
 `test_mock_scanner.py` verifies (no dcm2niix/scanner needed) that the DICOMs
-are named correctly, exceed `minExpectedDicomSize`, de-mosaic to 64×64×27,
-round-trip exactly, and carry recoverable condA/condB activation.
+are named correctly, exceed `minExpectedDicomSize`, parse to the reference
+DICOM's exact shape, frame-pack/unpack round-trips exactly, and the series
+carries recoverable condA/condB activation.
+
+## Live scanning
+
+Point `dataSource = "dicom"` at a **real** scanner's DICOM output and this
+project needs two things a mock/synthetic run doesn't have to deal with:
+
+**1. rt-cloud can't match your scanner's real filenames.** rt-cloud's DICOM
+watcher builds one exact, predictable filename per volume with plain
+`str.format()` — it has no wildcard/glob support. If your site's real-time
+export appends an unpredictable SOPInstanceUID (a common convention, e.g.
+`002_000003_000001_1.3.12.2.1107....dcm`), no `dicomNamePattern` can match it.
+`dicom_bridge.py` solves this: it watches the real drop folder, reads each
+file's actual `SeriesNumber`/`InstanceNumber` from its DICOM header (not its
+filename — conventions vary by site), and copies it into `dicomDir/` renamed
+to match `dicomNamePattern` exactly. It only renames — dcm2niix already
+handles Enhanced multi-frame DICOM natively, so no pixel data is touched.
+
+```bash
+# bridge whatever's already in the drop folder, then keep watching for more:
+python dicom_bridge.py --config conf/taskActivation.toml \
+  --source /path/to/real/scanner/drop/folder --series 3
+
+# one-shot backfill (bridge what's there now, then exit):
+python dicom_bridge.py --config conf/taskActivation.toml \
+  --source /path/to/real/scanner/drop/folder --series 3 --once
+```
+
+`--series` is the DICOM `SeriesNumber` of the run you want (read the header of
+one file to find it — e.g. with `pydicom`), **not** the toml's `runNum`/`RUN`
+token, which is just the output filename's run label. Run this alongside the
+analysis the same way you'd run `mock_scanner.py`, in a second host terminal,
+pointed at the same `dicomDir` the container has mounted.
+
+> Real scanner files carry real `PatientName`/`PatientID`/etc. until rt-cloud's
+> own `anonymize=True` (already set in `taskActivation.py`'s
+> `initDicomBidsStream` call) strips them on read — same as a real scanner's
+> raw feed always has. `dicom_bridge.py` doesn't change that; it's expected,
+> not a new exposure.
+
+**2. Don't hand-copy the protocol's TR into the toml.** Set `demoStep = "auto"`
+(instead of a number) and, in `dicom` mode, `taskActivation.py` will wait for
+the first real DICOM to appear in `dicomDir/` and read its actual
+`RepetitionTime` before building the GLM design — rather than requiring you to
+find and hardcode it. It waits up to `demoStepAutoTimeout` seconds (default 30;
+set that key in the toml to change it) and raises a clear error if nothing
+arrives in time, so start the scanner / `dicom_bridge.py` / `mock_scanner.py`
+first. A numeric `demoStep` always overrides auto-inference and behaves exactly
+as before.
 
 
 
@@ -106,11 +173,8 @@ effector-agnostic localizer:
    printed — **inspect that file** if it looks wrong. The displayed background is
    brain-extracted so you can see the mask is applied.
 2. **Baseline image** — always the **average signal at the start of the run,
-   before the first event** (cue or condition). `baselineFrames = 0` auto-detects
-   how many initial frames that is; set a number to override.
-2. **Baseline image** — the initial **rest frames before the first event** are
-   averaged into a per-voxel baseline (`baselineFrames = 0` auto-detects how many;
-   set a number to override).
+   before the first event** (cue or condition). `baselineFrames = -1` auto-detects
+   how many initial frames that is; set a number ≥ 0 to override.
 3. **% signal change** — every volume is expressed as `100 × (signal − baseline)
    / baseline`, per voxel.
 4. **ROI** — the **voxel with the highest % change during the first event block**
@@ -196,11 +260,12 @@ taskActivation/
 ├── rt_analysis.py               # shared helpers: design-from-events, masks, nilearn plots
 ├── realtime_display.py       # standalone nilearn/matplotlib viewer (no PsychoPy); run manually
 ├── motion_display.py         # standalone head-motion window (also writes motion.png); run manually
-├── mock_scanner.py           # simulate a scanner: stream mosaic DICOMs to dicomDir/
-├── templates/                # anonymized Siemens-mosaic DICOM header for mock_scanner
+├── mock_scanner.py           # simulate a scanner: stream Enhanced multi-frame DICOMs to dicomDir/
+├── dicom_bridge.py           # bridge a real scanner's raw filenames into rt-cloud's expected pattern
+├── templates/                # anonymized Enhanced multi-frame DICOM header for mock_scanner
 ├── test_pipeline.py          # offline end-to-end test on the REAL HcpMotor timing
 ├── test_generalize.py        # generalization test on HcpGambling (reward/punishment)
-├── test_mock_scanner.py      # tests the mock DICOM scanner (de-mosaic + recovery)
+├── test_mock_scanner.py      # tests the mock DICOM scanner (frame pack/unpack + recovery)
 ├── make_design.py            # (optional) write static design files for inspection
 ├── conf/
 │   └── taskActivation.toml     # data source, conditions, timing, display settings
@@ -297,8 +362,9 @@ docker run -it --rm \
 and point `eventsFile` at it. (`nilearn` is required for the plots:
 `pip install nilearn`.)
 
-**Live scanning:** set `dataSource = 'dicom'`, put run DICOMs in `dicomDir/`,
-set `dicomNamePattern`, and supply your own design.
+**Live scanning:** set `dataSource = 'dicom'` and supply your own design (events
+file / `glmCondA`/`glmCondB`) — see [Live scanning](#live-scanning) above for
+getting a real scanner's filenames and TR into this pipeline correctly.
 
 **Run-based OpenNeuro datasets:** set `dataSource = 'openneuro'` and `runEntity`
 to the run number; this uses rt-cloud's `initOpenNeuroStream` directly.

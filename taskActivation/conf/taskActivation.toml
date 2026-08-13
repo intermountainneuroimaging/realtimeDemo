@@ -40,7 +40,11 @@ eventsFile = "HcpMotor_acq-ap_events.tsv"
 #                          cond B = RIGHT hand (-> left cortex)
 
 # ---- timing ----
-demoStep = 2.0             # TR (s); also the simulated replay step
+demoStep = 2.0             # TR (s); also the simulated replay step.
+                           # dataSource='dicom' only: set to "auto" to infer TR
+                           # from the first real DICOM's RepetitionTime instead
+                           # of hardcoding it (see demoStepAutoTimeout below).
+demoStepAutoTimeout = 30.0 # seconds to wait for that first DICOM when demoStep="auto"
 hrf_delay = 2              # ~4 s hemodynamic lag at TR = 2 s
 fallbackNVols = 179        # used only if the stream can't report its length
 
@@ -62,7 +66,7 @@ glmZscore = true           # z-score the GLM map across voxels
 restTypes = []             # trial_types to treat as implicit baseline; [] = auto-detect (rest/fixation/...)
 nSlices = 6                # number of axial slices in the mosaic (used when zCuts is empty)
 zCuts = []                 # fixed axial slice positions in mm, e.g. [-20,-5,10,25,40,55]; [] = auto
-baselineFrames = 0         # 0 = auto: use all frames before the first event as baseline
+baselineFrames = -1        # -1 = auto: use all frames before the first event as baseline
 maskPercentile = 98        # brain mask = ref > maskFraction * p[maskPercentile]
 maskSource = "sbref"        # which image to mask from: 'sbref' or 'func'
 maskMethod = "bet"          # 'bet' (FSL skull-strip; removes skull/neck) | 'epi' | 'threshold'

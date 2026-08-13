@@ -58,7 +58,35 @@ ap.add_argument('--config', '-c', default=defaultConfig, type=str)
 cfg = loadConfigFile(ap.parse_args(None).config)
 
 taskName = str(getattr(cfg, 'taskName', getattr(cfg, 'title', 'task')))
-TR = float(cfg.demoStep)
+dataSource = str(cfg.dataSource)   # read early: 'dicom' + demoStep='auto' needs it before TR
+
+# TR ("demoStep"): a fixed number is used as-is (default). Set demoStep = "auto"
+# (dicom mode only) to infer it from the first real DICOM's RepetitionTime
+# instead of hardcoding it -- useful when pointing at a live scanner or a
+# dicom_bridge.py-fed dicomDir whose protocol TR you don't want to hand-copy
+# into the toml.
+_demoStepRaw = str(getattr(cfg, 'demoStep', '')).strip().lower()
+if dataSource == 'dicom' and _demoStepRaw == 'auto':
+    _autoTimeout = float(getattr(cfg, 'demoStepAutoTimeout', 30.0))
+    _runForPeek = int(cfg.runNum[0]) if isinstance(cfg.runNum, (list, tuple)) else int(cfg.runNum)
+    _peekPattern = stringPartialFormat(cfg.dicomNamePattern, 'RUN', _runForPeek)
+    print(f"[auto-TR] demoStep='auto' -- waiting up to {_autoTimeout:g}s for the first "
+          f"DICOM in {dicomPath} to infer TR (start mock_scanner.py / dicom_bridge.py "
+          "/ the scanner now if it isn't running yet)...")
+    _firstDicom = mrt.wait_for_first_dicom(dicomPath, _peekPattern, _runForPeek, timeout=_autoTimeout)
+    if _firstDicom is None:
+        raise RuntimeError(
+            f"demoStep='auto' but no DICOM matching {_peekPattern!r} appeared in "
+            f"{dicomPath} within {_autoTimeout:g}s. Start the DICOM source first, or "
+            "set demoStep to a fixed number of seconds.")
+    _info = mrt.dicom_header_info(_firstDicom)
+    if 'TR' not in _info:
+        raise RuntimeError(f"demoStep='auto': {_firstDicom} has no RepetitionTime tag; "
+                           "set demoStep to a fixed number of seconds instead.")
+    TR = _info['TR']
+    print(f"[auto-TR] inferred TR={TR:g}s from {os.path.basename(_firstDicom)}")
+else:
+    TR = float(cfg.demoStep)
 hrf_delay = int(cfg.hrf_delay)
 fwhm = float(cfg.fwhm)
 roiRadius = float(cfg.roiRadius)
@@ -72,7 +100,7 @@ _rt = list(getattr(cfg, 'restTypes', []) or [])           # explicit rest trial_
 restTypes = _rt if _rt else None
 nSlices = int(getattr(cfg, 'nSlices', 6))                 # axial mosaic slice count (auto)
 zCuts = mrt.parse_float_list(getattr(cfg, 'zCuts', []))   # fixed axial levels in mm; [] = auto
-baselineFramesCfg = int(getattr(cfg, 'baselineFrames', 0))  # 0 = auto (frames before 1st event)
+baselineFramesCfg = int(getattr(cfg, 'baselineFrames', -1))  # -1 = auto (frames before 1st event)
 maskFraction = float(cfg.maskFraction)
 maskPercentile = float(cfg.maskPercentile)
 liveEveryTR = int(cfg.liveEveryTR)
@@ -99,12 +127,13 @@ except Exception:
     pass
 
 # ---- choose the data source ----
-# dataSource: 'nifti'    -> download the bold once and replay it (default;
-#                           works for ds000244 HcpMotor, which has no run entity)
-#             'dicom'    -> stream scanner DICOMs from dicomDir/ (live scanning)
-#             'openneuro'-> rt-cloud initOpenNeuroStream (ONLY for datasets that
-#                           have a run entity; HcpMotor does not)
-dataSource = str(cfg.dataSource)
+# dataSource ('nifti'/'dicom'/'openneuro') was already read above, since the
+# demoStep='auto' TR inference needs it before this point:
+#   'nifti'     -> download the bold once and replay it (default; works for
+#                  ds000244 HcpMotor, which has no run entity)
+#   'dicom'     -> stream scanner DICOMs from dicomDir/ (live scanning)
+#   'openneuro' -> rt-cloud initOpenNeuroStream (ONLY for datasets that have a
+#                  run entity; HcpMotor does not)
 import time as _time
 replaySource = None
 streamId = None
@@ -186,7 +215,7 @@ firstOnset, firstOffset, firstLabel = fe
 rest_set = set(restTypes) if restTypes is not None else set(cls['rest'])
 non_rest_onsets = [o for o, _, tt in events_rows if tt not in rest_set and not mrt.is_rest_type(tt)]
 first_any_onset = min(non_rest_onsets) if non_rest_onsets else min(o for o, _, _ in events_rows)
-baselineN = baselineFramesCfg if baselineFramesCfg > 0 else max(1, int(first_any_onset // TR))
+baselineN = baselineFramesCfg if baselineFramesCfg >= 0 else max(1, int(first_any_onset // TR))
 # 1-based volume indices whose (hrf-shifted) signal reflects the first event block
 firstBlockVols = set(
     v for v in range(1, nVols + 1)
@@ -199,12 +228,14 @@ print(f"First event block: '{firstLabel}' {firstOnset:.1f}-{firstOffset:.1f}s "
 
 def fetch_volume(vol):
     """Return a 3D nibabel image for 1-based volume index `vol`, from whichever
-    source is active. Appends to the BIDS run for stream sources."""
+    source is active. Appends to the BIDS run for stream sources. Uses the
+    already-resolved `TR` (not raw cfg.demoStep, which is the string "auto"
+    when TR was inferred rather than a number)."""
     if replaySource is not None:
-        if cfg.demoStep:
-            _time.sleep(float(cfg.demoStep))   # mimic realtime TR pacing
+        if TR:
+            _time.sleep(TR)   # mimic realtime TR pacing
         return replaySource.get_volume(vol - 1)
-    inc = bidsInterface.getIncremental(streamId, volIdx=vol, demoStep=cfg.demoStep)
+    inc = bidsInterface.getIncremental(streamId, volIdx=vol, demoStep=TR)
     currentBidsRun.appendIncremental(inc)
     return inc.image
 

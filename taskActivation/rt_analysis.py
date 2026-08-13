@@ -54,30 +54,100 @@ def ensure_nilearn(verbose=True):
 
 
 # condition codes
-def volume_to_mosaic(vol, ncols=None):
-    """Tile a 3D volume (rows, cols, slices) into a 2D Siemens-style mosaic:
-    slices placed row-major in a `ncols`x`ncols` grid (ncols = ceil(sqrt(nSlices))
-    by default), matching what dcm2niix / nibabel expect when de-mosaicing."""
-    R, C, S = vol.shape
-    if ncols is None:
-        ncols = int(np.ceil(np.sqrt(S)))
-    mos = np.zeros((ncols * R, ncols * C), dtype=vol.dtype)
-    for i in range(S):
-        r, c = divmod(i, ncols)
-        mos[r*R:(r+1)*R, c*C:(c+1)*C] = vol[:, :, i]
-    return mos
+def pack_frames(vol):
+    """Pack a 3D volume (rows, cols, slices) into an Enhanced-multi-frame-style
+    frame stack: shape (slices, rows, cols), frame i = slice i (ascending,
+    matching InStackPositionNumber 1..N in the DICOM's PerFrameFunctionalGroups).
+    This is what a multi-frame DICOM's PixelData holds (pydicom's .pixel_array
+    returns this same shape automatically for Enhanced multi-frame files)."""
+    return np.ascontiguousarray(np.moveaxis(vol, 2, 0))
 
 
-def mosaic_to_volume(mos, n_slices, ncols=None):
-    """Inverse of volume_to_mosaic: extract `n_slices` tiles from a 2D mosaic."""
-    if ncols is None:
-        ncols = int(np.ceil(np.sqrt(n_slices)))
-    R, C = mos.shape[0] // ncols, mos.shape[1] // ncols
-    vol = np.zeros((R, C, n_slices), dtype=mos.dtype)
-    for i in range(n_slices):
-        r, c = divmod(i, ncols)
-        vol[:, :, i] = mos[r*R:(r+1)*R, c*C:(c+1)*C]
-    return vol
+def unpack_frames(frames):
+    """Inverse of pack_frames: (slices, rows, cols) -> (rows, cols, slices)."""
+    return np.ascontiguousarray(np.moveaxis(frames, 0, 2))
+
+
+def dicom_header_info(path):
+    """Read the handful of geometry/timing tags a mock-scanner or live-TR-inference
+    caller needs from a real DICOM, checking both classic single-frame top-level
+    tags and Enhanced multi-frame's nested Shared/PerFrame Functional Groups
+    (Siemens Enhanced MR, e.g. MAGNETOM Prisma/Vida XA-line reconstructions store
+    RepetitionTime/PixelSpacing/SliceThickness there instead of top-level).
+    Returns a dict with whichever of TR/pixelSpacing/sliceThickness/rows/cols/
+    nFrames were found (missing ones are simply absent, not defaulted here)."""
+    import pydicom
+    ds = pydicom.dcmread(path, stop_before_pixels=True)
+    info = {}
+    if hasattr(ds, 'Rows'):
+        info['rows'] = int(ds.Rows)
+    if hasattr(ds, 'Columns'):
+        info['cols'] = int(ds.Columns)
+    if hasattr(ds, 'NumberOfFrames'):
+        info['nFrames'] = int(ds.NumberOfFrames)
+
+    tr = getattr(ds, 'RepetitionTime', None)
+    px = getattr(ds, 'PixelSpacing', None)
+    st = getattr(ds, 'SliceThickness', None)
+    shared = getattr(ds, 'SharedFunctionalGroupsSequence', None)
+    if shared:
+        grp = shared[0]
+        if tr is None:
+            try:
+                tr = grp.MRTimingAndRelatedParametersSequence[0].RepetitionTime
+            except Exception:
+                pass
+        try:
+            pm = grp.PixelMeasuresSequence[0]
+            if px is None:
+                px = pm.PixelSpacing
+            if st is None:
+                st = pm.SliceThickness
+        except Exception:
+            pass
+    if tr is not None:
+        info['TR'] = float(tr) / 1000.0   # DICOM RepetitionTime is in ms
+    if px is not None:
+        info['pixelSpacing'] = [float(v) for v in px]
+    if st is not None:
+        info['sliceThickness'] = float(st)
+    return info
+
+
+def promote_repetition_time_to_top_level(ds):
+    """rt-cloud's own metadata reader (rtCommon.bidsCommon.getDicomMetadata)
+    only iterates TOP-LEVEL DICOM elements -- it never looks inside
+    SharedFunctionalGroupsSequence. So a real Enhanced-multi-frame DICOM whose
+    RepetitionTime lives only in that nested location (the normal place for
+    it, per the Enhanced MR IOD) will make rt-cloud's live pipeline raise
+    MissingMetadataError, even though the file is perfectly valid and dcm2niix
+    parses it fine. This copies RepetitionTime up to a top-level element
+    (mutates `ds` in place; does not touch pixel data or anything else) so
+    rt-cloud can see it. Returns True if a value was found and set."""
+    if getattr(ds, 'RepetitionTime', None) is not None:
+        return True
+    try:
+        tr = ds.SharedFunctionalGroupsSequence[0].MRTimingAndRelatedParametersSequence[0].RepetitionTime
+    except Exception:
+        return False
+    ds.RepetitionTime = tr
+    return True
+
+
+def wait_for_first_dicom(dicomDir, namePattern, run, timeout=10.0, poll=0.25):
+    """Poll dicomDir for the first volume's file (TR=1) of `run`, matching the
+    same filename rt-cloud's own DicomToBidsStream will look for. Returns the
+    path once it appears, or None on timeout (caller decides the fallback)."""
+    import os as _os
+    import time as _time
+    fname = namePattern.format(RUN=run, SCAN=run, TR=1)
+    path = _os.path.join(dicomDir, fname)
+    end = _time.time() + timeout
+    while _time.time() < end:
+        if _os.path.exists(path) and _os.path.getsize(path) > 0:
+            return path
+        _time.sleep(poll)
+    return None
 
 
 def parse_float_list(val):
