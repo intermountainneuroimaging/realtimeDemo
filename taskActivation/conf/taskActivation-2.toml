@@ -17,7 +17,7 @@ title = "Real-Time fMRI Task Activation (ds000244 HcpMotor)"
 #   'dicom'     -> stream scanner DICOMs from dicomDir/ (real scanner, or run
 #                 mock_scanner.py in another terminal to simulate one)
 #   'openneuro' -> rt-cloud initOpenNeuroStream (only for datasets WITH a run entity)
-dataSource = 'dicom'
+dataSource = 'nifti'
 
 dsAccessionNumber = 'ds000244'
 subjectName = "01"          # subjects: 01, 02, 04, 05, 06, 07, 08, 09, 11, 12, 13, 14

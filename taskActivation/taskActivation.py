@@ -101,6 +101,8 @@ restTypes = _rt if _rt else None
 nSlices = int(getattr(cfg, 'nSlices', 6))                 # axial mosaic slice count (auto)
 zCuts = mrt.parse_float_list(getattr(cfg, 'zCuts', []))   # fixed axial levels in mm; [] = auto
 baselineFramesCfg = int(getattr(cfg, 'baselineFrames', -1))  # -1 = auto (frames before 1st event)
+saveGif = bool(getattr(cfg, 'saveGif', True))             # replay-able activation GIF at end of run
+gifFps = int(getattr(cfg, 'gifFps', 8))                   # GIF playback speed (frames/sec)
 maskFraction = float(cfg.maskFraction)
 maskPercentile = float(cfg.maskPercentile)
 liveEveryTR = int(cfg.liveEveryTR)
@@ -204,6 +206,7 @@ print(f"Conditions -> interest: {cls['interest']} | covariates: {cls['covariates
 Xglm, glm_names = mrt.make_glm_design(events_rows, nVols, TR, drift_order=driftOrder,
                                       rest_types=restTypes)
 print(f"GLM regressors: {glm_names}")
+conds = [glmCondA] + ([glmCondB] if glmCondB else [])   # for the peak-voxel HRF-fit rows
 
 # ---- baseline + first-condition-of-interest block ----
 interest_set = set(cls['interest']) or None
@@ -387,6 +390,15 @@ for vol in range(1, nVols + 1):
         # condition label for THIS frame (hrf-aligned), e.g. 'left hand' / 'REST'
         condLabel = mrt.active_condition_label(events_rows, ((vol - 1) - hrf_delay) * TR)
 
+        # peak-voxel measured-vs-HRF-predicted traces, refit on all rows seen so
+        # far -- same incremental-refit approach as the GLM contrast map above,
+        # so these rows update live every frame instead of only appearing once
+        # at the very end of the run.
+        vtraces = []
+        if Yglm is not None and vol >= Xglm.shape[1] + 2:
+            vtraces = mrt.glm_voxel_traces(Xglm[:vol], Yglm[:vol], glm_names, mask_idx,
+                                           vol_shape, TR, conds, events_rows)
+
         mrt.write_live_update(
             liveDir, curRun, vol, taskName, psc3d, ref3d, affine, center, mapThreshPct,
             roi_trace, glob_trace, cond_trace,
@@ -394,7 +406,8 @@ for vol in range(1, nVols + 1):
             caption='% change from baseline (red: increase, blue: decrease)',
             traceALabel=f'ROI ({firstLabel}) %\u0394S', traceBLabel='whole-brain peak %\u0394S',
             contrast3d=contrast3d, contrast_thresh=contrastThresh, condLabel=condLabel,
-            n_slices=nSlices, z_cuts=(zCuts or None), contrast_label=glmLabel)
+            n_slices=nSlices, z_cuts=(zCuts or None), contrast_label=glmLabel,
+            voxel_traces=vtraces)
 
 if streamId is not None:
     try:
@@ -403,9 +416,12 @@ if streamId is not None:
         print(f"[bids] archive append skipped: {e}")
     bidsInterface.closeStream(streamId)
 
-# ---- end of run: add peak-voxel measured-vs-HRF-predicted plots to current.png ----
+# ---- end of run: guaranteed final peak-voxel plot using the COMPLETE series
+#      (the per-frame writes above already show these rows live throughout the
+#      run, but liveEveryTR>1 can leave the very last frame's write a few
+#      volumes stale -- this ensures the final current.png always reflects
+#      every volume) ----
 try:
-    conds = [glmCondA] + ([glmCondB] if glmCondB else [])
     vtraces = mrt.glm_voxel_traces(Xglm, Yglm, glm_names, mask_idx, vol_shape, TR,
                                    conds, events_rows)
     if vtraces and psc3d is not None and center is not None:
@@ -425,6 +441,17 @@ try:
               "run too short) \u2014 skipping the peak-voxel HRF plot.")
 except Exception as e:
     print(f"[final] peak-voxel HRF plot skipped: {e}")
+
+# ---- end of run: assemble every saved live_run{curRun}_vol*.npz bundle into a
+#      replay-able GIF of the whole run's activation maps (set saveGif=false
+#      in the toml to skip this) ----
+if saveGif:
+    try:
+        gifPath = mrt.build_activation_gif(liveDir, curRun, fps=gifFps)
+        if gifPath:
+            print(f"Activation GIF saved to {gifPath} -- reopen it anytime to replay the run.")
+    except Exception as e:
+        print(f"[gif] activation GIF skipped: {e}")
 
 print(f"\n{taskName} complete. Realtime % signal-change plots + final peak-voxel HRF "
       f"fits in {liveDir}/current.png (Data Plots tab shows the ROI trace; "

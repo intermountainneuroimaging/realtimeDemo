@@ -76,6 +76,9 @@ maskFraction = 0.12
 # ---- realtime display ----
 liveEveryTR = 1            # write a live update every N volumes
 liveDirName = "live"       # subfolder of rt-cloud/outDir/ the viewer watches
+saveGif = true             # at end of run, assemble every saved frame into a
+                           # replay-able outDir/live/activation_run<N>.gif
+gifFps = 8                 # GIF playback speed (frames/sec)
 
 # ---- web Data Plots tab (LEFT-ROI %SC minus RIGHT-ROI %SC) ----
 plotTitle = 'Lateralization (LEFT-ROI minus RIGHT-ROI, % signal change)'

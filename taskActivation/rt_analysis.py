@@ -453,6 +453,37 @@ class NiftiReplaySource:
 
 
 # ======================= realtime activation plots ===========================
+def _brain_z_cuts(ref3d, affine, n_slices, min_frac=0.02):
+    """Pick `n_slices` z-mm levels that actually contain brain content,
+    evenly spaced across the mask's real z-extent. Passing a bare slice COUNT
+    to nilearn lets it auto-pick levels from the statistical map's extent,
+    which can land on a boundary slice with no brain voxels at all -- nilearn
+    still reserves that panel and prints its z-label, but draws nothing in
+    it, and the L/R orientation labels (placed relative to that empty panel)
+    collapse together instead of framing a real slice. Returns None (caller
+    falls back to the plain slice-count behavior) if there's nothing usable."""
+    import nibabel as nib
+    ref3d = np.asarray(ref3d)
+    R, C, nz = ref3d.shape
+    if nz < 2:
+        return None
+    frac = np.array([(ref3d[:, :, k] != 0).mean() for k in range(nz)])
+    valid = np.where(frac > min_frac)[0]
+    if valid.size < 2:
+        return None
+    lo, hi = int(valid.min()), int(valid.max())
+    n = max(2, min(n_slices, hi - lo + 1))
+    idx = np.unique(np.round(np.linspace(lo, hi, n)).astype(int))
+    # Evaluate z at the volume's (i, j) CENTER, not the (0, 0) corner: real
+    # acquisitions are often mildly oblique (affine[2,1]/[2,0] nonzero), so z
+    # depends on i/j too, not just k. Using the corner can compute a z-mm
+    # value miles from where the brain actually is at that slice, which is
+    # exactly what produced empty boundary panels before this fix.
+    ic, jc = R / 2.0, C / 2.0
+    zs = sorted(float(nib.affines.apply_affine(affine, [ic, jc, k])[2]) for k in idx)
+    return zs
+
+
 def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
                      peak=None, condAName='A', condBName='B', caption=None, cmap='RdBu_r',
                      contrast3d=None, contrast_thresh=2.0,
@@ -461,8 +492,9 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
     """Realtime plot via nilearn.plot_stat_map as a single-row AXIAL MOSAIC.
     Slice positions: `z_cuts` (a list of z-coords in mm) if given, else `n_slices`
     auto-selected levels. Top row = per-frame map; when `contrast3d` is given a
-    SECOND mosaic row below shows the GLM contrast. `voxel_traces` (optional, used
-    at end of run) adds one line-plot row per entry below the brain rows, each
+    SECOND mosaic row below shows the GLM contrast. `voxel_traces` (optional;
+    updated live every frame once the model is estimable, not just at the end
+    of the run) adds one line-plot row per entry below the brain rows, each
     showing a peak voxel's measured signal vs its HRF-predicted signal."""
     try:
         import nibabel as nib
@@ -470,7 +502,10 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
         import matplotlib.pyplot as plt
     except Exception:
         return False
-    cuts = list(z_cuts) if z_cuts else n_slices      # explicit mm levels, or auto count
+    if z_cuts:
+        cuts = list(z_cuts)                          # explicit mm levels
+    else:
+        cuts = _brain_z_cuts(ref3d, affine, n_slices) or n_slices   # real brain content, or fall back to auto count
     cap = caption if caption is not None else f"red {condAName}>{condBName} / blue {condBName}>{condAName}"
     zimg = nib.Nifti1Image(np.asarray(zmap3d, np.float32), affine)
     bg = nib.Nifti1Image(np.asarray(ref3d, np.float32), affine)
@@ -485,15 +520,24 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
     gs = fig.add_gridspec(nrows, 1, height_ratios=height_ratios, hspace=0.45)
     ax_top = fig.add_subplot(gs[0])
     ax_bot = fig.add_subplot(gs[1]) if has_con else None
+    # title=None here (not passed to plot_stat_map): nilearn draws its own
+    # title INSIDE the image region, near the same top edge where it also
+    # draws the L/R orientation labels, and the two can overlap/collide. Set
+    # the title ourselves via ax.set_title() instead -- placed BELOW the
+    # mosaic (negative y) and bold, so it reads as a caption clearly distinct
+    # from nilearn's own in-image text (z-level labels, colorbar ticks, etc).
     plotting.plot_stat_map(zimg, bg_img=bg, threshold=thresh, display_mode='z',
                            cut_coords=cuts, colorbar=True, cmap=cmap, black_bg=True,
-                           figure=fig, axes=ax_top, title=f"{title}  ({cap})")
+                           figure=fig, axes=ax_top)
+    ax_top.set_title(f"{title}  ({cap})", color='white', fontsize=11,
+                     fontweight='bold', y=-0.22)
     if has_con:
         cimg = nib.Nifti1Image(np.asarray(contrast3d, np.float32), affine)
         plotting.plot_stat_map(cimg, bg_img=bg, threshold=contrast_thresh,
                                display_mode='z', cut_coords=cuts, colorbar=True,
-                               cmap='RdBu_r', black_bg=True, figure=fig, axes=ax_bot,
-                               title=contrast_label)
+                               cmap='RdBu_r', black_bg=True, figure=fig, axes=ax_bot)
+        ax_bot.set_title(contrast_label, color='white', fontsize=10,
+                         fontweight='bold', y=-0.22)
     # end-of-run: measured vs HRF-predicted timecourse at each condition's peak voxel
     for i, tr in enumerate(traces):
         ax = fig.add_subplot(gs[n_brain + i], facecolor='black')
@@ -566,6 +610,10 @@ def write_live_update(liveDir, run, vol, runLabel, zmap3d, ref3d, affine, peak, 
         cond_trace=np.array(cond_trace, np.int16))
     if contrast3d is not None:
         bundle['contrast'] = np.asarray(contrast3d, np.float32)
+    # persist voxel_traces too (not just used for rendering) so the end-of-run
+    # activation GIF can replay the peak-voxel HRF rows exactly as shown live,
+    # not just the brain mosaics
+    bundle['voxel_traces'] = np.asanyarray(voxel_traces or [], dtype=object)
     np.savez_compressed(fn, **bundle)
     tmp = os.path.join(liveDir, 'latest.tmp')
     with open(tmp, 'w') as f:
@@ -587,6 +635,92 @@ def write_live_update(liveDir, run, vol, runLabel, zmap3d, ref3d, affine, peak, 
     except Exception as e:
         print(f"[live] activation plot skipped: {e}")
     return fn
+
+
+def build_activation_gif(liveDir, run, fps=8, out_path=None, verbose=True):
+    """Re-render every saved live_run{run}_vol*.npz bundle (in volume order)
+    and assemble them into an animated GIF of the whole run's activation maps
+    -- a standalone file you can reopen and replay later without rerunning the
+    analysis (any image viewer or browser plays a .gif; no server needed).
+    Reuses nilearn_stat_png on each bundle's own saved fields, so each frame
+    matches exactly what was shown live at that volume (brain mosaic rows +
+    peak-voxel HRF rows, if those had been computed by that point).
+    Returns the GIF path, or None if there was nothing to build (no bundles
+    yet, or Pillow unavailable)."""
+    import glob
+    import shutil
+    try:
+        from PIL import Image
+    except Exception:
+        if verbose:
+            print("[gif] Pillow not available (pip install pillow) -- skipping activation GIF")
+        return None
+    ref_path = os.path.join(liveDir, 'reference.npz')
+    if not os.path.exists(ref_path):
+        return None
+    refd = np.load(ref_path)
+    ref3d, affine = refd['ref'], refd['affine']
+
+    def _volnum(p):
+        m = re.search(r'_vol(\d+)\.npz$', p)
+        return int(m.group(1)) if m else -1
+    files = sorted(glob.glob(os.path.join(liveDir, f'live_run{run}_vol*.npz')), key=_volnum)
+    if not files:
+        return None
+
+    frame_dir = os.path.join(liveDir, f'.gif_frames_run{run}')
+    os.makedirs(frame_dir, exist_ok=True)
+    frame_paths = []
+    for i, f in enumerate(files):
+        try:
+            b = dict(np.load(f, allow_pickle=True))
+        except Exception:
+            continue
+        vol = int(b['vol'])
+        contrast3d = b['contrast'] if 'contrast' in b else None
+        vtraces = list(b['voxel_traces']) if b.get('voxel_traces') is not None else []
+        condLabel = str(b['condLabel']) if b['condLabel'] else ''
+        cond_txt = f" | {condLabel}" if condLabel else ""
+        title = f"{b['phase']} | run {run} | vol {vol}{cond_txt}"
+        frame_png = os.path.join(frame_dir, f'frame_{vol:04d}.png')
+        try:
+            ok = nilearn_stat_png(
+                frame_png, b['zmap'], ref3d, affine, float(b['thresh']), title,
+                peak=b['peak'], condAName=str(b['condA']), condBName=str(b['condB']),
+                caption=(str(b['caption']) if b['caption'] else None),
+                contrast3d=contrast3d, contrast_thresh=float(b['contrast_thresh']),
+                contrast_label=str(b['contrast_label']), n_slices=int(b['n_slices']),
+                z_cuts=(b['z_cuts'] if b['z_cuts'].size else None), voxel_traces=vtraces)
+        except Exception as e:
+            ok = False
+            if verbose:
+                print(f"[gif] frame {vol} skipped: {e}")
+        if ok:
+            frame_paths.append(frame_png)
+        if verbose and (i + 1) % 20 == 0:
+            print(f"[gif] rendered {i + 1}/{len(files)} frames...")
+
+    if not frame_paths:
+        shutil.rmtree(frame_dir, ignore_errors=True)
+        return None
+
+    out_path = out_path or os.path.join(liveDir, f'activation_run{run}.gif')
+    tmp_gif = out_path + '.part'
+    try:
+        imgs = [Image.open(p).convert('P', palette=Image.ADAPTIVE) for p in frame_paths]
+        imgs[0].save(tmp_gif, format='GIF', save_all=True, append_images=imgs[1:],
+                    duration=int(1000 / max(fps, 1)), loop=0)
+        os.replace(tmp_gif, out_path)
+    finally:
+        shutil.rmtree(frame_dir, ignore_errors=True)   # always clean up rendered frames
+        if os.path.exists(tmp_gif):
+            try:
+                os.remove(tmp_gif)
+            except OSError:
+                pass
+    if verbose:
+        print(f"[gif] wrote {out_path} ({len(frame_paths)} frames @ {fps} fps)")
+    return out_path
 
 
 def first_event_window(rows, exclude_cues=True, gap=3.0, include_types=None,
@@ -667,8 +801,12 @@ def make_glm_design(rows, nVols, TR, drift_order=1, rest_types=None):
 def glm_voxel_traces(X, Y, names, mask_idx, vol_shape, TR, conds, events_rows, colors=None):
     """For each condition in `conds`, fit the full GLM, find the voxel with the
     largest beta for that condition, and return a trace dict: the measured
-    %-signal-change timecourse at that voxel, the full-model HRF prediction (also
-    in %), and the condition's stimulus blocks (for shading). Used at end of run."""
+    %-signal-change timecourse at that voxel, and the HRF-predicted response
+    for JUST that condition (its own regressor times its own beta -- not the
+    full-model fit, which would include drift/intercept/every other modeled
+    condition and no longer isolate what this condition actually predicts).
+    `X`/`Y` can be a prefix of the full series (e.g. Xglm[:vol]) for a live
+    per-frame refit, or the complete series for the end-of-run pass."""
     try:
         beta, _, _, _ = np.linalg.lstsq(X, Y, rcond=None)   # K x nVox
     except Exception:
@@ -685,7 +823,7 @@ def glm_voxel_traces(X, Y, names, mask_idx, vol_shape, TR, conds, events_rows, c
         vox = tuple(int(c) for c in np.unravel_index(int(mask_idx[col]), vol_shape))
         mean = abs(float(beta[iI, col])) + 1e-6
         measured = 100.0 * (Y[:, col] - mean) / mean
-        predicted = 100.0 * (X @ beta[:, col] - mean) / mean
+        predicted = 100.0 * (X[:, ic] * beta[ic, col]) / mean   # this condition's own contribution only
         blocks = [(o, o + d) for (o, d, tt) in events_rows if tt == cond]
         traces.append({'title': f"{cond} peak voxel {vox}  (\u03b2={beta[ic, col]:.0f})",
                        't': t, 'measured': np.asarray(measured), 'predicted': np.asarray(predicted),
