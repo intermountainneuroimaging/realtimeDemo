@@ -1,11 +1,11 @@
 # Installation
 
 One-time setup: get the rt-cloud Docker image, install the host-side Python
-dependencies for the helper scripts, prefetch demo data, and (if you're
-connecting to a real scanner) install `dicom_bridge.py` as a background
-service. See [README.md](README.md) for how to actually run the project once
-this is done, and [TESTING.md](TESTING.md) to verify each piece works before
-connecting to a real scanner.
+dependencies for the helper scripts, optionally prefetch tutorial data, and
+(if you're connecting to a real scanner) install `dicom_bridge.py` as a
+background service. See [README.md](README.md) for how to actually run the
+project once this is done, and [TESTING.md](TESTING.md) to verify each piece
+works before connecting to a real scanner.
 
 ## 1. Docker
 
@@ -23,8 +23,10 @@ This is about 9–10 GB. A few things worth knowing up front:
   platform (linux/amd64) does not match the detected host platform
   (linux/arm64/v8)` on every run — that's expected and harmless, just slower
   (FSL's `mcflirt`/`fslmaths` calls in particular).
-- **Disk space:** budget the ~10 GB image plus up to ~1 GB per OpenNeuro demo
-  dataset cached under `openneuro_cache/` (see below).
+- **Disk space:** budget the ~10 GB image; if you also plan to run
+  [tutorial/](tutorial/) against real downloaded data (optional — the tests
+  there use synthetic data by default), add ~1 GB per OpenNeuro dataset
+  cached under `tutorial/openneuro_cache/` (see below).
 - **First `docker run`:** you'll also see `bash: cannot set terminal process
   group ... / bash: no job control in this shell` — the image's entrypoint
   wraps everything in a login shell; also harmless.
@@ -44,14 +46,17 @@ pip install numpy pydicom nibabel scipy
 `numpy`/`pydicom` are required by both scripts; `nibabel`/`scipy` are only
 needed for `mock_scanner.py --source <bold.nii.gz>` replay mode.
 
-## 3. Prefetch demo data (optional)
+## 3. Prefetch tutorial data (optional)
 
-The default `dataSource = "nifti"` config downloads its BOLD run from
-OpenNeuro's public S3 mirror automatically the first time you run it, and
-caches it under `openneuro_cache/` so every run after that is instant. To do
-that ahead of time instead of waiting on first launch (each is ~600 MB):
+The live pipeline (`taskActivation.py`) always streams DICOMs and needs none
+of this — it's only relevant if you want [tutorial/](tutorial/) to replay
+*real* downloaded OpenNeuro data (`hcp_replay.py`'s `ensure_openneuro_bold`)
+rather than the synthetic data `test_pipeline.py`/`test_generalize.py` use by
+default. `tutorial/download_data.sh` fetches a BOLD run from OpenNeuro's
+public S3 mirror into `tutorial/openneuro_cache/` (each is ~600 MB):
 
 ```bash
+cd tutorial
 ./download_data.sh ds000244 01 03 HcpMotor ap
 ./download_data.sh ds000244 01 03 HcpGambling ap
 ```
@@ -62,7 +67,7 @@ or run it inside a throwaway container that already has it:
 ```bash
 docker run -it --rm \
   -v /full/path/to/taskActivation:/rt-cloud/projects/taskActivation \
-  brainiak/rtcloud:latest projects/taskActivation/download_data.sh ds000244 01 03 HcpMotor ap
+  brainiak/rtcloud:latest projects/taskActivation/tutorial/download_data.sh ds000244 01 03 HcpMotor ap
 ```
 
 ## 4. Setting up `dicom_bridge.py` as a background service (systemd)

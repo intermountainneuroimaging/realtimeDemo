@@ -6,7 +6,7 @@ pipeline, from pure-Python offline checks (no Docker, no download) up to the
 full live DICOM streaming path. See [INSTALLATION.md](INSTALLATION.md) first
 if you haven't pulled the image / installed the host-side Python deps yet.
 
-## 1. `test_pipeline.py` — offline, no download, no Docker
+## 1. `tutorial/test_pipeline.py` — offline, no download, no Docker
 
 Validates the whole analysis (mask → baseline → %change → GLM → ROI → plots)
 against the **real HcpMotor event timing**, without needing the (large) BOLD
@@ -15,7 +15,7 @@ and a realistic geometry/affine, injects HRF-convolved activation into
 simulated left/right M1, and runs the exact analysis code used live.
 
 ```bash
-cd taskActivation
+cd taskActivation/tutorial
 python test_pipeline.py
 ```
 
@@ -28,11 +28,11 @@ everything passed:
   RIGHT blocks)
 - the nilearn realtime plot and live bundles are produced
 
-The only thing it can't exercise locally is the actual S3 BOLD download,
-which rt-cloud performs at runtime via `initOpenNeuroStream`/`aws s3 sync` on
-your machine — see #4 below for that.
+The only thing it can't exercise locally is real imaging data — it uses
+synthetic volumes throughout. See `tutorial/README.md` if you want to replay
+real downloaded OpenNeuro data instead.
 
-## 2. `test_generalize.py` — offline generalization check (HcpGambling)
+## 2. `tutorial/test_generalize.py` — offline generalization check (HcpGambling)
 
 Same idea as `test_pipeline.py`, but proves the analysis is genuinely
 task-agnostic rather than tuned to HcpMotor: it verifies on HcpGambling that
@@ -41,7 +41,7 @@ regressed out of the reward−punishment contrast as a covariate (not treated
 as rest, not treated as a condition of interest).
 
 ```bash
-python test_generalize.py
+python test_generalize.py   # from taskActivation/tutorial
 ```
 
 ## 3. `test_mock_scanner.py` — offline, mock DICOM scanner
@@ -59,71 +59,49 @@ Docker, no dcm2niix, no real scanner) and confirms:
 python test_mock_scanner.py
 ```
 
-## 4. Direct-testing Docker run — the full pipeline on demo data
+## 4. Mock scanner DICOM streaming — the full pipeline, Docker + live path, no real scanner
 
-This exercises the real container: rt-cloud's `ClientInterface`,
-`mcflirt`/`fslmaths`, the OpenNeuro download (or cache), brain masking, and
-the live plot-writing code, end to end. See
+This is the one that exercises the real container end to end: rt-cloud's
+`ClientInterface`, the DICOM watcher, `dcm2niix` conversion, `mcflirt`/
+`fslmaths`, brain masking, and the live plot-writing code — using synthetic
+volumes from `mock_scanner.py` instead of a real scanner. See
 [README.md](README.md#quick-start-direct-testing-no-web-interface) for the
 full command; in short:
 
-```bash
-PROJ_DIR=/full/path/to/taskActivation
-OUT_DIR=/full/path/to/outDir
-docker run -it --rm \
-  -v $PROJ_DIR:/rt-cloud/projects/taskActivation \
-  -v $OUT_DIR:/rt-cloud/outDir \
-  brainiak/rtcloud:latest python projects/taskActivation/taskActivation.py
-```
-
-Answer `y` at the `continue using localfiles?` prompt. Watch the printed log:
-you should see `Data source: nifti | volumes: N` (N is however many timepoints
-are in that OpenNeuro run — currently 185 for HcpMotor), a `Brain mask: ...`
-line with a coverage percentage roughly in the 20–45% range (much lower or
-higher usually means `maskMethod`/`maskFrac` needs adjusting for your data),
-then one `--- HcpMotor | vol k/N ---` line per volume. Partway through, open
-`$OUT_DIR/live/current.png` on the host — you should see a real brain (not
-noise) with a labeled condition in the title. (Skip `-v $OUT_DIR:...` and
-you'll never see these — they're written inside the `--rm` container and
-vanish when it exits.) Run the same command with `--config
-projects/taskActivation/conf/taskActivation_gambling.toml` to check the
-HcpGambling config the same way.
-
-## 5. Mock scanner DICOM streaming — the live path without a real scanner
-
-This is the one that actually exercises `dataSource = "dicom"`: the DICOM
-watcher, `dcm2niix` conversion, and everything downstream, using synthetic
-volumes instead of a real scanner.
-
-1. Edit a copy of the toml (or make a scratch one) and set `dataSource =
-   "dicom"`.
-2. Start the analysis container as in #4, but also mount a `dicomDir`:
+1. Start the analysis container, mounting a `dicomDir`:
    ```bash
+   PROJ_DIR=/full/path/to/taskActivation
    DICOM_DIR=/full/path/to/dicomDir
+   OUT_DIR=/full/path/to/outDir
    docker run -it --rm \
      -v $PROJ_DIR:/rt-cloud/projects/taskActivation \
      -v $DICOM_DIR:/rt-cloud/projects/taskActivation/dicomDir \
      -v $OUT_DIR:/rt-cloud/outDir \
-     brainiak/rtcloud:latest python projects/taskActivation/taskActivation.py \
-     --config projects/taskActivation/conf/<your-dicom-toml>
+     brainiak/rtcloud:latest python projects/taskActivation/taskActivation.py
    ```
-3. In a **second terminal on the host** (not in the container), run the mock
+   Answer `y` at the `continue using localfiles?` prompt.
+2. In a **second terminal on the host** (not in the container), run the mock
    scanner pointed at the same folder:
    ```bash
-   python mock_scanner.py --config conf/<your-dicom-toml> --out $DICOM_DIR
+   python mock_scanner.py --config conf/taskActivation.toml --out $DICOM_DIR
    ```
 
 **What to look for:** the analysis log should show `Data source: dicom |
-volumes: N`, then process volumes as they arrive from the mock scanner
-(there's no download step here). Each volume waits up to `dicomTimeout`
-seconds (default 30) before giving up, so a normal startup gap won't crash
-the run — but if you see `RuntimeError: No DICOM for volume N arrived within
-dicomTimeout=...s`, the mock scanner either isn't running yet or is writing
-to a different folder than the container has mounted — start it first, or
-use `--no-delay` to write the whole run up front before starting the
-analysis.
+volumes: N`, a `Brain mask: ...` line with a coverage percentage roughly in
+the 20–45% range (much lower or higher usually means `maskMethod`/`maskFrac`
+needs adjusting), then process volumes as they arrive from the mock scanner.
+Partway through, open `$OUT_DIR/live/current.png` on the host — you should
+see a real brain (not noise) with a labeled condition in the title. (Skip
+`-v $OUT_DIR:...` and you'll never see these — they're written inside the
+`--rm` container and vanish when it exits.) Each volume waits up to
+`dicomTimeout` seconds (default 30) before giving up, so a normal startup gap
+won't crash the run — but if you see `RuntimeError: No DICOM for volume N
+arrived within dicomTimeout=...s`, the mock scanner either isn't running yet
+or is writing to a different folder than the container has mounted — start
+it first, or use `--no-delay` to write the whole run up front before
+starting the analysis.
 
-## 6. Sanity-checking `dicom_bridge.py` before a real scan
+## 5. Sanity-checking `dicom_bridge.py` before a real scan
 
 `dicom_bridge.py` only renames files and patches one metadata field — it
 never touches pixel data — so the fastest way to confirm it works against
@@ -147,15 +125,15 @@ Check that:
   [README.md](README.md#running-with-live-scanner-data))
 
 Once that looks right, point `--dest` at the real `dicomDir` and you're ready
-for #5's docker run, but with your real scanner in place of `mock_scanner.py`.
+for #4's docker run, but with your real scanner in place of `mock_scanner.py`.
 
 ## Interpreting failures
 
-The offline tests (`test_pipeline.py`, `test_generalize.py`,
+The offline tests (`tutorial/test_pipeline.py`, `tutorial/test_generalize.py`,
 `test_mock_scanner.py`) each print one `[PASS]`/`[FAIL]` line per check and a
 final `RESULT: ALL PASS` / `RESULT: SEE FAILURES`, then exit 0/1 accordingly —
-safe to wire into CI or a pre-flight script. The Docker-based checks (#4, #5)
-don't have a formal pass/fail signal; "it processed every volume without a
+safe to wire into CI or a pre-flight script. The Docker-based check (#4)
+doesn't have a formal pass/fail signal; "it processed every volume without a
 traceback, and `current.png` shows a real brain with sensible activation" is
 the bar — see [README.md](README.md#data-outputs-to-expect) for what that
 should actually look like.

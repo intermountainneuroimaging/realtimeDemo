@@ -1,36 +1,15 @@
 ##### Configuration file: taskActivation (generic real-time task-activation demo) #####
 #
-# Real-time, registration-free LEFT/RIGHT motor mapping. Integrated with
-# OpenNeuro ds000244 (Individual Brain Charting) "HcpMotor" task for debugging,
-# and able to stream from a scanner live (dsAccessionNumber = 'None').
+# Real-time, registration-free LEFT/RIGHT motor mapping, streaming DICOMs from
+# a real (or mock) scanner via dicomDir/. Uses the ds000244 (Individual Brain
+# Charting) "HcpMotor" task design as its event timing/GLM template.
 # Realtime activation is plotted with nilearn.
 
 title = "Real-Time fMRI Task Activation (ds000244 HcpMotor)"
 
 # ---- generic real-time task-activation demo ----
 
-# ---- data source ----
-# dataSource:
-#   'nifti'     -> download the bold once and replay it locally (DEFAULT). This is
-#                  required for ds000244 HcpMotor: rt-cloud's initOpenNeuroStream
-#                  demands a 'run' entity, but HcpMotor has none (it uses acq-ap/pa).
-#   'dicom'     -> stream scanner DICOMs from dicomDir/ (real scanner, or run
-#                 mock_scanner.py in another terminal to simulate one)
-#   'openneuro' -> rt-cloud initOpenNeuroStream (only for datasets WITH a run entity)
-dataSource = 'dicom'
-
-dsAccessionNumber = 'ds000244'
-subjectName = "01"          # subjects: 01, 02, 04, 05, 06, 07, 08, 09, 11, 12, 13, 14
-session = "03"              # HcpMotor lives in ses-03
 taskName = "HcpMotor"
-acquisition = "ap"          # phase-encode run: "ap" or "pa"
-runEntity = ""              # no run entity for this task
-
-# NIfTI replay: where to cache the downloaded bold, and an optional explicit path.
-# If niftiPath is set, it is used directly (no download). Otherwise the bold is
-# fetched from OpenNeuro's public S3 mirror into niftiCacheDir on first run.
-niftiCacheDir = "openneuro_cache"
-niftiPath = ""
 
 # events file (shipped) used to build the per-volume design at runtime.
 # If you change subject/acq, copy that run's *_events.tsv here and update this.
@@ -40,15 +19,14 @@ eventsFile = "HcpMotor_acq-ap_events.tsv"
 #                          cond B = RIGHT hand (-> left cortex)
 
 # ---- timing ----
-demoStep = 2.0             # TR (s); also the simulated replay step.
-                           # dataSource='dicom' only: set to "auto" to infer TR
-                           # from the first real DICOM's RepetitionTime instead
-                           # of hardcoding it (see demoStepAutoTimeout below).
+demoStep = 2.0             # TR (s). Set to "auto" to infer TR from the first real
+                           # DICOM's RepetitionTime instead of hardcoding it (see
+                           # demoStepAutoTimeout below).
 demoStepAutoTimeout = 30.0 # seconds to wait for that first DICOM when demoStep="auto"
 hrf_delay = 2              # ~4 s hemodynamic lag at TR = 2 s
 fallbackNVols = 179        # used only if the stream can't report its length
 
-# ---- scanner (DICOM) streaming - used when dsAccessionNumber = 'None' ----
+# ---- scanner (DICOM) streaming ----
 subjectNum = 101
 dicomNamePattern = "demo_{RUN:06d}_{TR:06d}.dcm"   # demo_SeriesNumber_InstanceNumber (zero-padded)
 minExpectedDicomSize = 300000
@@ -71,7 +49,6 @@ nSlices = 6                # number of axial slices in the mosaic (used when zCu
 zCuts = []                 # fixed axial slice positions in mm, e.g. [-20,-5,10,25,40,55]; [] = auto
 baselineFrames = -1        # -1 = auto: use all frames before the first event as baseline
 maskPercentile = 98        # brain mask = ref > maskFraction * p[maskPercentile]
-maskSource = "sbref"        # which image to mask from: 'sbref' or 'func'
 maskMethod = "bet"          # 'bet' (FSL skull-strip; removes skull/neck) | 'epi' | 'threshold'
 maskFrac = 0.35             # BET fractional-intensity threshold (lower = larger brain)
 maskFraction = 0.12

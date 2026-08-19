@@ -6,9 +6,14 @@ and ROIs are derived from the functional data itself, and the realtime
 activation maps are plotted with **nilearn**. The design is read from a BIDS
 `events.tsv`, so it adapts to any task: rest is implicit, the conditions of
 interest are set by `glmCondA`/`glmCondB`, and every other `trial_type`
-becomes a GLM covariate. Two ready-made configs ship with the project — the
-ds000244 "HcpMotor" task (LEFT vs RIGHT hand) and "HcpGambling" (reward vs
-punishment) — used throughout this doc as worked examples.
+becomes a GLM covariate. The shipped `conf/taskActivation.toml` uses the
+ds000244 "HcpMotor" task design (LEFT vs RIGHT hand) as a worked example of
+the event timing / GLM contrast a real scanner run needs.
+
+Data comes from a real (or mock) scanner's DICOM stream — see
+[tutorial/](tutorial/) for an offline, no-scanner-needed way to validate this
+same analysis against real HCP task data (HcpMotor + HcpGambling) before you
+ever point it at a scanner.
 
 **Setup:** see **[INSTALLATION.md](INSTALLATION.md)** for one-time setup
 (Docker image, host-side Python deps, prefetching demo data, and installing
@@ -32,20 +37,14 @@ file and classifies `trial_type`s automatically:
   covariate regressor, so its variance is modeled out of the contrast.
 
 To point it at a different task, set `taskName` + `eventsFile` and the
-conditions. `conf/taskActivation_gambling.toml` is a full worked example
-(`task-HcpGambling`, `reward` vs `punishment`, with `neutral` automatically
-becoming a covariate).
+conditions — e.g. `task-HcpGambling`, `reward` vs `punishment`, with `neutral`
+automatically becoming a covariate (see [tutorial/](tutorial/) for that
+example validated offline against real HcpGambling data).
 
-It reads data three ways, selected by `dataSource` in the toml:
-
-- **`dicom`** — streams DICOMs from a real (or mock) scanner via `dicomDir/`.
-  This is the live-scanning path; see below.
-- **`nifti`** — downloads one BOLD run from OpenNeuro's public S3 mirror
-  (once, then cached) and replays its volumes. Used by the two demo configs
-  and by [TESTING.md](TESTING.md) — not for live scanning.
-- **`openneuro`** — rt-cloud's `initOpenNeuroStream`, only for datasets with a
-  BIDS `run` entity (neither demo dataset has one, so they use `nifti`
-  instead).
+It always streams DICOMs from a real (or mock) scanner via `dicomDir/` — see
+below for how to point that at a real scanner, or
+[TESTING.md](TESTING.md#4-mock-scanner-dicom-streaming--the-full-pipeline-docker--live-path-no-real-scanner)
+to exercise the same path with `mock_scanner.py` instead.
 
 ## Quick start: direct testing (no web interface)
 
@@ -53,14 +52,14 @@ This mirrors rt-cloud's ["Testing Your Project
 Directly"](https://github.com/brainiak/rt-cloud) pattern: it runs
 `taskActivation.py` straight inside the container for rapid iteration,
 without spinning up the projectInterface/projectServer, certs, or a browser.
-It's how the demo configs (and [TESTING.md](TESTING.md)) are meant to be run;
-for a real scanner, see [Running with live scanner data](#running-with-live-scanner-data)
-below.
+See [TESTING.md](TESTING.md) for how to exercise this with `mock_scanner.py`
+before pointing it at a real scanner; for a real scanner, see
+[Running with live scanner data](#running-with-live-scanner-data) below.
 
 ```bash
 PROJ_NAME=taskActivation
 PROJ_DIR=/full/path/to/taskActivation
-DICOM_DIR=/full/path/to/dicomDir      # only needed for dataSource = "dicom"
+DICOM_DIR=/full/path/to/dicomDir
 OUT_DIR=/full/path/to/outDir          # where current.png / motion.png / the GIF land
 
 docker run -it --rm \
@@ -72,8 +71,9 @@ docker run -it --rm \
 
 `PROJ_DIR` must point at *this* folder (`taskActivation/`, containing
 `taskActivation.py`), since `PROJ_NAME` is used both as the mount point and as
-the script filename. With the default `dataSource = "nifti"` config you don't
-need `DICOM_DIR` at all — drop that `-v` line.
+the script filename. `DICOM_DIR` needs volumes waiting in it before/while the
+run starts — either a real scanner's export folder (via `dicom_bridge.py`,
+below) or `mock_scanner.py` (see [TESTING.md](TESTING.md)).
 
 On startup `ClientInterface()` can't reach a project server inside this
 single-container run, and will ask:
@@ -98,8 +98,8 @@ need `realtime_display.py` (below) for that.
 
 ## Running with live scanner data
 
-Point `dataSource = "dicom"` at a **real** scanner's DICOM output and this
-project needs two things the demo (`nifti`) configs don't have to deal with:
+Pointing `dicomDir/` at a **real** scanner's DICOM output (rather than
+`mock_scanner.py`) means dealing with three things a mock run doesn't have to:
 
 **1. rt-cloud can't match your scanner's real filenames.** rt-cloud's DICOM
 watcher builds one exact, predictable filename per volume with plain
@@ -168,8 +168,8 @@ you don't have to; see [INSTALLATION.md](INSTALLATION.md#4-setting-up-dicom_brid
 > not a new exposure.
 
 **2. Don't hand-copy the protocol's TR into the toml.** Set `demoStep =
-"auto"` (instead of a number) and, in `dicom` mode, `taskActivation.py` will
-wait for the first real DICOM to appear in `dicomDir/` and read its actual
+"auto"` (instead of a number) and `taskActivation.py` will wait for the first
+real DICOM to appear in `dicomDir/` and read its actual
 `RepetitionTime` before building the GLM design — rather than requiring you
 to find and hardcode it. It waits up to `demoStepAutoTimeout` seconds
 (default 30; set that key in the toml to change it) and raises a clear error
@@ -245,21 +245,15 @@ speed; default 8 frames/sec). Building it takes a little while for a long run
 (nilearn re-renders every saved frame), so it happens once, after the last
 volume, and won't interfere with the live 'while it's running' outputs above.
 
-### Sample output — HcpMotor
+### Sample output
 
-Full run, `dataSource = "nifti"`, default `conf/taskActivation.toml` (LEFT vs
-RIGHT hand). LEFT hand drives the right motor cortex; RIGHT hand drives the
-left motor cortex — the two peak-voxel rows at the bottom show that
-lateralized, HRF-shaped response recovered live, volume by volume:
-
-![HcpMotor sample current.png](docs/images/hcpmotor_sample.png)
-
-### Sample output — HcpGambling
-
-Full run, `dataSource = "nifti"`, `conf/taskActivation_gambling.toml`
-(reward vs punishment, `neutral` regressed out as a covariate):
-
-![HcpGambling sample current.png](docs/images/hcpgambling_sample.png)
+`current.png` from a full HcpMotor run (LEFT vs RIGHT hand — LEFT hand drives
+the right motor cortex, RIGHT hand the left, the two peak-voxel rows at the
+bottom showing that lateralized, HRF-shaped response recovered live volume by
+volume) and a full HcpGambling run (reward vs punishment, `neutral` regressed
+out as a covariate) are in [tutorial/README.md](tutorial/README.md#sample-output) —
+both were produced by replaying real ds000244 data through this same analysis
+pipeline, offline.
 
 ## Project structure
 
@@ -268,26 +262,30 @@ taskActivation/
 ├── README.md                 # this file — running + outputs
 ├── INSTALLATION.md           # one-time setup
 ├── TESTING.md                # verifying each component
-├── taskActivation.py         # main RT-Cloud analysis (registration-free, task-agnostic)
+├── taskActivation.py         # main RT-Cloud analysis (registration-free, task-agnostic, dicom streaming)
 ├── rt_analysis.py            # shared helpers: design-from-events, masks, nilearn plots
 ├── realtime_display.py       # standalone nilearn/matplotlib viewer (no PsychoPy); run manually
 ├── motion_display.py         # standalone head-motion window (also writes motion.png); run manually
 ├── mock_scanner.py           # simulate a scanner: stream Enhanced multi-frame DICOMs to dicomDir/
 ├── dicom_bridge.py           # bridge a real scanner's raw filenames into rt-cloud's expected pattern
 ├── templates/                # anonymized Enhanced multi-frame DICOM header for mock_scanner
-├── docs/images/               # sample current.png outputs referenced above
-├── test_pipeline.py          # offline end-to-end test on the REAL HcpMotor timing
-├── test_generalize.py        # generalization test on HcpGambling (reward/punishment)
 ├── test_mock_scanner.py      # tests the mock DICOM scanner (frame pack/unpack + recovery)
 ├── make_design.py            # (optional) write static design files for inspection
-├── download_data.sh          # prefetch an OpenNeuro demo BOLD run
 ├── conf/
-│   ├── taskActivation.toml          # HcpMotor demo config (data source, timing, display settings)
-│   └── taskActivation_gambling.toml # HcpGambling demo config
+│   └── taskActivation.toml   # HcpMotor config (timing, GLM contrast, display settings)
 ├── study_design/
-│   ├── HcpMotor_acq-ap_events.tsv    # real ds000244 HcpMotor events (drives the design)
-│   └── HcpGambling_acq-ap_events.tsv # real ds000244 HcpGambling events
-└── dicomDir/                  # scanner DICOMs (dicom mode only)
+│   └── HcpMotor_acq-ap_events.tsv    # real ds000244 HcpMotor events (drives the design)
+├── dicomDir/                  # scanner DICOMs
+└── tutorial/                  # offline HCP-data validation of this analysis, no scanner needed
+    ├── README.md                        # what it is + sample outputs
+    ├── test_pipeline.py                 # offline end-to-end test on the REAL HcpMotor timing
+    ├── test_generalize.py               # generalization test on HcpGambling (reward/punishment)
+    ├── hcp_replay.py                    # OpenNeuro download + NIfTI replay helpers (tutorial-only)
+    ├── download_data.sh                 # prefetch an OpenNeuro demo BOLD run
+    ├── conf/taskActivation_gambling.toml  # reference config for the HcpGambling nifti-replay demo
+    ├── study_design/HcpGambling_acq-ap_events.tsv
+    ├── docs/images/                     # sample current.png outputs
+    └── openneuro_cache/                 # downloaded demo BOLD runs (gitignored)
 ```
 
 ## Per-volume pipeline (registration-free)
@@ -295,8 +293,8 @@ taskActivation/
 1. DICOM → Nifti via the BIDS incremental
 2. Motion correction to the functional reference (`mcflirt`) — realignment only
 3. 5 mm FWHM Gaussian smoothing (`fslmaths`)
-4. Brain mask from the functional reference (intensity threshold, or BET on
-   the sbref) — no atlas/warp
+4. Brain mask from the functional reference (BET skull-strip, nilearn EPI
+   mask, or intensity threshold) — no atlas/warp
 5. Accumulate the volume into the running per-condition averages
 6. Update ROI traces, the % signal change map, and the incremental GLM map
 

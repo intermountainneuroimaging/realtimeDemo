@@ -14,18 +14,24 @@ tracks that effector. Also covers the NIfTI replay source and the nilearn plot.
 Run:  python test_pipeline.py
 -----------------------------------------------------------------------------"""
 import os
+import sys
 import numpy as np
 import nibabel as nib
 from scipy.ndimage import gaussian_filter
-import rt_analysis as mrt
-mrt.ensure_nilearn()
 
 currPath = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(os.path.dirname(currPath))   # taskActivation/ -- for rt_analysis
+sys.path.append(currPath)                    # this folder -- for hcp_replay
+import rt_analysis as mrt
+import hcp_replay as hcp
+mrt.ensure_nilearn()
+
 liveDir = os.path.join(currPath, '_test_live')
 os.makedirs(liveDir, exist_ok=True)
 
 TR = 2.0; hrf_delay = 2; roiRadius = 4; mapThreshPct = 0.5
-events = mrt.read_events_tsv(os.path.join(currPath, 'study_design', 'HcpMotor_acq-ap_events.tsv'))
+events = mrt.read_events_tsv(os.path.join(os.path.dirname(currPath), 'study_design',
+                                          'HcpMotor_acq-ap_events.tsv'))
 last = max(o + d for o, d, _ in events)
 nVols = int(np.ceil((last + 10) / TR))
 design = mrt.build_design_from_events(events, nVols, TR, hrf_delay)
@@ -71,9 +77,9 @@ def make_volume(v):
 # sbref mask: write a synthetic sbref next to a fake bold and mask from it
 sbref3d = make_volume(0)
 boldP = os.path.join(liveDir, 'sub-01_ses-03_task-HcpMotor_acq-ap_bold.nii.gz')
-sbrefP = mrt.sbref_path_for(boldP)
+sbrefP = hcp.sbref_path_for(boldP)
 nib.save(nib.Nifti1Image(sbref3d.astype(np.float32), affine), sbrefP)
-sb_mask, sb_img = mrt.mask_from_sbref(sbrefP)
+sb_mask, sb_img = hcp.mask_from_sbref(sbrefP)
 bmask = (sb_mask.flatten() if sb_mask is not None else mrt.compute_brain_mask(make_volume(0)).flatten())
 ref3d = sbref3d; mrt.write_reference(liveDir, ref3d, affine)
 baseline_sum = None; baseline_mean = None
@@ -138,7 +144,7 @@ checks['roi_psc_tracks_first_effector'] = (
     roi_tr[cond_tr == 1].mean() > max(0.2, 3 * abs(roi_tr[cond_tr == 0].mean())))
 checks['roi_psc_low_in_rest'] = abs(roi_tr[cond_tr == 0].mean()) < 0.3
 checks['sbref_mask_used'] = sb_mask is not None and int(bmask.sum()) > 100
-checks['sbref_path_builder'] = mrt.sbref_path_for('/x/sub-01_task-X_bold.nii.gz') == '/x/sub-01_task-X_sbref.nii.gz'
+checks['sbref_path_builder'] = hcp.sbref_path_for('/x/sub-01_task-X_bold.nii.gz') == '/x/sub-01_task-X_sbref.nii.gz'
 # mask dispatcher: BET requested but absent in sandbox -> must fall back gracefully
 _mflat, _msrc = mrt.make_brain_mask(sbrefP, sbref3d, affine, shape, method='bet')
 checks['mask_dispatch_falls_back'] = _msrc in ('bet', 'epi', 'threshold') and 0.02 < _mflat.mean() < 0.8
@@ -199,7 +205,7 @@ checks['live_bundles_written'] = len([f for f in os.listdir(liveDir) if f.starts
 # NIfTI replay source
 _v4 = np.stack([make_volume(v) for v in range(8)], axis=-1)
 _p = os.path.join(liveDir, '_synthetic_bold.nii.gz'); nib.save(nib.Nifti1Image(_v4.astype(np.float32), affine), _p)
-_src = mrt.NiftiReplaySource(_p)
+_src = hcp.NiftiReplaySource(_p)
 checks['nifti_replay_numvols'] = _src.numVolumes == 8
 checks['nifti_replay_volume_matches'] = np.allclose(np.asarray(_src.get_volume(3).dataobj), _v4[..., 3], atol=1e-3)
 

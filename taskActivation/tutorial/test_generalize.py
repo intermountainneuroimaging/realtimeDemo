@@ -10,13 +10,16 @@ confirms the incremental GLM:
   * supports single-condition beta-weight, and that rest is implicit.
 -----------------------------------------------------------------------------"""
 import os
+import sys
 import numpy as np
 from scipy.ndimage import gaussian_filter
+
+currPath = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(os.path.dirname(currPath))   # taskActivation/ -- for rt_analysis
 import rt_analysis as mrt
 
 TR = 2.0
-ev = mrt.read_events_tsv(os.path.join(os.path.dirname(__file__),
-                                      'study_design', 'HcpGambling_acq-ap_events.tsv'))
+ev = mrt.read_events_tsv(os.path.join(currPath, 'study_design', 'HcpGambling_acq-ap_events.tsv'))
 last = max(o + d for o, d, _ in ev); nVols = int(np.ceil((last + 10) / TR))
 condA, condB = 'reward', 'punishment'
 

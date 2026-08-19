@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """-----------------------------------------------------------------------------
-mock_scanner.py  —  simulate an MRI scanner for dataSource = "dicom".
+mock_scanner.py  —  simulate an MRI scanner for taskActivation.py's DICOM stream.
 
 Writes one Enhanced-multi-frame DICOM per volume into the watched dicomDir at
 TR cadence, exactly matching the project's dicomNamePattern, so you can test
@@ -150,7 +150,7 @@ def write_dicom(template, vol3d, out_path, instance, run, TR):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Mock DICOM scanner for RT-Cloud dataSource='dicom'.")
+    ap = argparse.ArgumentParser(description="Mock DICOM scanner for taskActivation.py's DICOM stream.")
     ap.add_argument('--config', default=os.path.join(HERE, 'conf', 'taskActivation.toml'))
     ap.add_argument('--reference-dicom', default=DEFAULT_REFERENCE,
                     help='real (or template) DICOM to source geometry/TR from; '

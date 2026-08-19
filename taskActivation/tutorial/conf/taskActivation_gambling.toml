@@ -1,28 +1,27 @@
-##### Configuration file: taskActivation (generic real-time task-activation demo) #####
+##### Reference config: HOW the HcpGambling nifti-replay demo was configured #####
 #
-# Real-time, registration-free LEFT/RIGHT motor mapping. Integrated with
-# OpenNeuro ds000244 (Individual Brain Charting) "HcpMotor" task for debugging,
-# and able to stream from a scanner live (dsAccessionNumber = 'None').
+# NOTE: kept for reference only. ../../taskActivation.py now streams DICOMs
+# exclusively (see ../../conf/taskActivation.toml) -- it no longer has a
+# 'nifti'/'openneuro' dataSource, so this file isn't consumed by any script
+# in this project. It documents the GLM/task settings (glmCondA/glmCondB,
+# eventsFile) used to produce tutorial/docs/images/hcpgambling_sample.png via
+# a NIfTI replay of real ds000244 HcpGambling data (see hcp_replay.py /
+# download_data.sh). If you want to run the HcpGambling *design* against a
+# real or mock scanner instead, copy ../../conf/taskActivation.toml and swap
+# in this file's taskName/eventsFile/glmCondA/glmCondB.
+#
+# Real-time, registration-free reward/punishment mapping. Integrated with
+# OpenNeuro ds000244 (Individual Brain Charting) "HcpGambling" task.
 # Realtime activation is plotted with nilearn.
 
-title = "Real-Time fMRI Task Activation (ds000244 HcpMotor)"
+title = "Real-Time fMRI Task Activation (ds000244 HcpGambling)"
 
 # ---- generic real-time task-activation demo ----
-
-# ---- data source ----
-# dataSource:
-#   'nifti'     -> download the bold once and replay it locally (DEFAULT). This is
-#                  required for ds000244 HcpMotor: rt-cloud's initOpenNeuroStream
-#                  demands a 'run' entity, but HcpMotor has none (it uses acq-ap/pa).
-#   'dicom'     -> stream scanner DICOMs from dicomDir/ (real scanner, or run
-#                 mock_scanner.py in another terminal to simulate one)
-#   'openneuro' -> rt-cloud initOpenNeuroStream (only for datasets WITH a run entity)
-dataSource = 'nifti'
 
 dsAccessionNumber = 'ds000244'
 subjectName = "01"          # subjects: 01, 02, 04, 05, 06, 07, 08, 09, 11, 12, 13, 14
 session = "03"              # HcpMotor lives in ses-03
-taskName = "HcpMotor"
+taskName = "HcpGambling"
 acquisition = "ap"          # phase-encode run: "ap" or "pa"
 runEntity = ""              # no run entity for this task
 
@@ -34,7 +33,7 @@ niftiPath = ""
 
 # events file (shipped) used to build the per-volume design at runtime.
 # If you change subject/acq, copy that run's *_events.tsv here and update this.
-eventsFile = "HcpMotor_acq-ap_events.tsv"
+eventsFile = "HcpGambling_acq-ap_events.tsv"
 
 # condition display names. cond A = LEFT hand (-> right cortex),
 #                          cond B = RIGHT hand (-> left cortex)
@@ -53,6 +52,9 @@ subjectNum = 101
 dicomNamePattern = "demo_{RUN:06d}_{TR:06d}.dcm"   # demo_SeriesNumber_InstanceNumber (zero-padded)
 minExpectedDicomSize = 300000
 runNum = [1]
+dicomTimeout = 30.0        # seconds to wait for EACH volume's DICOM before raising
+                           # (rtCommon's own default is only 5s -- too short for a real
+                           # scanner's startup gap or an occasional slow volume)
 
 # ---- analysis (registration-free) ----
 fwhm = 5                   # smoothing FWHM (mm)
@@ -60,8 +62,8 @@ roiRadius = 4              # spherical ROI radius (voxels) on each peak
 mapThreshPct = 0.5         # %-signal-change threshold for the per-frame activation overlay
 contrastThresh = 2.0       # GLM map threshold (z units when glmZscore=true)
 driftOrder = 1             # polynomial drift terms in the GLM (per-run)
-glmCondA = "left_hand"     # GLM contrast condA-condB; also used as the display label
-glmCondB = "right_hand"    # set empty ("") to plot the condA beta weight instead
+glmCondA = "reward"
+glmCondB = "punishment"
 glmZscore = true           # z-score the GLM map across voxels
 restTypes = []             # trial_types to treat as implicit baseline; [] = auto-detect (rest/fixation/...)
 nSlices = 6                # number of axial slices in the mosaic (used when zCuts is empty)

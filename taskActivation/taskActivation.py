@@ -1,7 +1,7 @@
 """-----------------------------------------------------------------------------
 --- REAL-TIME fMRI TASK ACTIVATION (registration-free) ---
-A generic real-time task-activation demo for RT-Cloud. Streams an fMRI run
-(OpenNeuro replay or a live scanner), and for every volume shows task activation
+A generic real-time task-activation demo for RT-Cloud. Streams DICOMs from a
+real (or mock) scanner via dicomDir/, and for every volume shows task activation
 WITHOUT anatomical registration: the brain mask and ROIs come from the functional
 data itself (rt_analysis.py), and activation is plotted with nilearn.
 
@@ -18,8 +18,10 @@ and at the END of the run two more rows are added: the measured vs HRF-predicted
 timecourse at the peak voxel for condA and condB. A live head-motion plot
 (motion.png + motion_display.py) and a web Data Plots ROI trace are also produced.
 
-Defaults to the OpenNeuro ds000244 (Individual Brain Charting) "HcpMotor" task
-(LEFT/RIGHT hand blocks, TR = 2.0 s); see conf/*_gambling.toml for another task.
+Defaults to the ds000244 (Individual Brain Charting) "HcpMotor" task design
+(LEFT/RIGHT hand blocks, TR = 2.0 s) as the event timing template; see
+tutorial/ for an offline, no-scanner-needed demonstration of this same
+analysis validated against real HCP task data.
 -----------------------------------------------------------------------------"""
 import os
 import sys
@@ -58,15 +60,14 @@ ap.add_argument('--config', '-c', default=defaultConfig, type=str)
 cfg = loadConfigFile(ap.parse_args(None).config)
 
 taskName = str(getattr(cfg, 'taskName', getattr(cfg, 'title', 'task')))
-dataSource = str(cfg.dataSource)   # read early: 'dicom' + demoStep='auto' needs it before TR
 
 # TR ("demoStep"): a fixed number is used as-is (default). Set demoStep = "auto"
-# (dicom mode only) to infer it from the first real DICOM's RepetitionTime
-# instead of hardcoding it -- useful when pointing at a live scanner or a
+# to infer it from the first real DICOM's RepetitionTime instead of
+# hardcoding it -- useful when pointing at a live scanner or a
 # dicom_bridge.py-fed dicomDir whose protocol TR you don't want to hand-copy
 # into the toml.
 _demoStepRaw = str(getattr(cfg, 'demoStep', '')).strip().lower()
-if dataSource == 'dicom' and _demoStepRaw == 'auto':
+if _demoStepRaw == 'auto':
     _autoTimeout = float(getattr(cfg, 'demoStepAutoTimeout', 30.0))
     _runForPeek = int(cfg.runNum[0]) if isinstance(cfg.runNum, (list, tuple)) else int(cfg.runNum)
     _peekPattern = stringPartialFormat(cfg.dicomNamePattern, 'RUN', _runForPeek)
@@ -103,9 +104,9 @@ zCuts = mrt.parse_float_list(getattr(cfg, 'zCuts', []))   # fixed axial levels i
 baselineFramesCfg = int(getattr(cfg, 'baselineFrames', -1))  # -1 = auto (frames before 1st event)
 saveGif = bool(getattr(cfg, 'saveGif', True))             # replay-able activation GIF at end of run
 gifFps = int(getattr(cfg, 'gifFps', 8))                   # GIF playback speed (frames/sec)
-dicomTimeout = float(getattr(cfg, 'dicomTimeout', 30.0))  # seconds to wait per volume (dicom mode)
-                                                           # before raising -- rtCommon's own default
-                                                           # is only 5s, too short for real scanner gaps
+dicomTimeout = float(getattr(cfg, 'dicomTimeout', 30.0))  # seconds to wait per volume before raising
+                                                           # -- rtCommon's own default is only 5s, too
+                                                           # short for real scanner gaps
 maskFraction = float(cfg.maskFraction)
 maskPercentile = float(cfg.maskPercentile)
 liveEveryTR = int(cfg.liveEveryTR)
@@ -131,64 +132,21 @@ try:
 except Exception:
     pass
 
-# ---- choose the data source ----
-# dataSource ('nifti'/'dicom'/'openneuro') was already read above, since the
-# demoStep='auto' TR inference needs it before this point:
-#   'nifti'     -> download the bold once and replay it (default; works for
-#                  ds000244 HcpMotor, which has no run entity)
-#   'dicom'     -> stream scanner DICOMs from dicomDir/ (live scanning)
-#   'openneuro' -> rt-cloud initOpenNeuroStream (ONLY for datasets that have a
-#                  run entity; HcpMotor does not)
-import time as _time
-replaySource = None
-streamId = None
-boldPath = None
-maskSource = str(getattr(cfg, 'maskSource', 'sbref'))   # 'sbref' (preferred) or 'func'
+# ---- start the DICOM stream ----
 maskMethod = str(getattr(cfg, 'maskMethod', 'bet'))     # 'bet' (skull-strip) | 'epi' | 'threshold'
 maskFrac = float(getattr(cfg, 'maskFrac', 0.35))        # BET fractional-intensity threshold
 
-if dataSource == 'nifti':
-    cacheDir = os.path.join(currPath, str(cfg.niftiCacheDir))
-    if str(cfg.niftiPath) != '':
-        boldPath = str(cfg.niftiPath)
-    else:
-        boldPath = mrt.ensure_openneuro_bold(
-            cacheDir, str(cfg.dsAccessionNumber), str(cfg.subjectName),
-            str(cfg.session), str(cfg.taskName), str(cfg.acquisition))
-    replaySource = mrt.NiftiReplaySource(boldPath)
-    nVols = replaySource.numVolumes
-    print(f"NIfTI replay: {boldPath}  ({nVols} volumes)")
+dicomScanNamePattern = stringPartialFormat(cfg.dicomNamePattern, 'RUN', curRun)
+streamId = bidsInterface.initDicomBidsStream(dicomPath, dicomScanNamePattern,
+                                             cfg.minExpectedDicomSize, anonymize=True,
+                                             **{'subject': cfg.subjectNum, 'run': curRun,
+                                                'task': cfg.taskName})
+try:
+    nVols = int(bidsInterface.getNumVolumes(streamId))
+except Exception:
+    nVols = int(cfg.fallbackNVols)
 
-elif dataSource == 'dicom':
-    dicomScanNamePattern = stringPartialFormat(cfg.dicomNamePattern, 'RUN', curRun)
-    streamId = bidsInterface.initDicomBidsStream(dicomPath, dicomScanNamePattern,
-                                                 cfg.minExpectedDicomSize, anonymize=True,
-                                                 **{'subject': cfg.subjectNum, 'run': curRun,
-                                                    'task': cfg.taskName})
-    try:
-        nVols = int(bidsInterface.getNumVolumes(streamId))
-    except Exception:
-        nVols = int(cfg.fallbackNVols)
-
-elif dataSource == 'openneuro':
-    entities = {'subject': str(cfg.subjectName), 'task': str(cfg.taskName)}
-    if str(cfg.session) != '':
-        entities['session'] = str(cfg.session)
-    if str(cfg.acquisition) != '':
-        entities['acquisition'] = str(cfg.acquisition)
-    if str(cfg.runEntity) != '':
-        entities['run'] = str(cfg.runEntity)
-    extra = {"rpc_timeout": 600} if clientInterfaces.isUsingProjectServer() else {}
-    print(f"Preparing OpenNeuro {cfg.dsAccessionNumber} for replay: {entities}")
-    streamId = bidsInterface.initOpenNeuroStream(str(cfg.dsAccessionNumber), **entities, **extra)
-    try:
-        nVols = int(bidsInterface.getNumVolumes(streamId))
-    except Exception:
-        nVols = int(cfg.fallbackNVols)
-else:
-    raise ValueError(f"Unknown dataSource '{dataSource}' (use nifti/dicom/openneuro)")
-
-print(f"Data source: {dataSource} | volumes: {nVols}")
+print(f"Data source: dicom | volumes: {nVols}")
 # label for the GLM mosaic row, from the configured contrast
 _zsfx = ' (z)' if glmZscore else ' (%)'
 if glmCondB:
@@ -233,21 +191,16 @@ print(f"First event block: '{firstLabel}' {firstOnset:.1f}-{firstOffset:.1f}s "
 
 
 def fetch_volume(vol):
-    """Return a 3D nibabel image for 1-based volume index `vol`, from whichever
-    source is active. Appends to the BIDS run for stream sources. Uses the
-    already-resolved `TR` (not raw cfg.demoStep, which is the string "auto"
-    when TR was inferred rather than a number).
+    """Return a 3D nibabel image for 1-based volume index `vol`, and append it
+    to the BIDS run. Uses the already-resolved `TR` (not raw cfg.demoStep,
+    which is the string "auto" when TR was inferred rather than a number).
 
-    In dicom mode, rtCommon's own getIncremental()/getImageData() already
-    poll quietly for the file to appear -- but only for 5s by default, which
-    is too short for a real scanner (there's often a real gap before the
-    first volume, or an occasional slow one mid-scan). `dicomTimeout` (config,
-    default 30s) extends that wait so a normal startup delay doesn't crash
-    the run; it only raises once nothing has arrived for that long."""
-    if replaySource is not None:
-        if TR:
-            _time.sleep(TR)   # mimic realtime TR pacing
-        return replaySource.get_volume(vol - 1)
+    rtCommon's own getIncremental()/getImageData() already poll quietly for
+    the file to appear -- but only for 5s by default, which is too short for
+    a real scanner (there's often a real gap before the first volume, or an
+    occasional slow one mid-scan). `dicomTimeout` (config, default 30s)
+    extends that wait so a normal startup delay doesn't crash the run; it
+    only raises once nothing has arrived for that long."""
     try:
         inc = bidsInterface.getIncremental(streamId, volIdx=vol, demoStep=TR, timeout=dicomTimeout)
     except Exception as e:
@@ -295,14 +248,8 @@ for vol in range(1, nVols + 1):
         nib.save(niftiObject, tmpPath + "/funcRef.nii")
         ref_img = nib.load(tmpPath + "/funcRef.nii")
         ref3d = ref_img.get_fdata(); affine = ref_img.affine; vol_shape = ref3d.shape
-        # ---- brain mask: BET skull-strip (prefer sbref) -> nilearn EPI -> threshold ----
-        mask_img = None
-        if maskSource == 'sbref' and boldPath:
-            sb = mrt.sbref_path_for(boldPath)
-            if sb and os.path.exists(sb):
-                mask_img = sb
-        if mask_img is None:
-            mask_img = tmpPath + "/funcRef.nii"          # the first functional volume
+        # ---- brain mask: BET skull-strip -> nilearn EPI -> threshold ----
+        mask_img = tmpPath + "/funcRef.nii"          # the first functional volume
         brain_mask_flat, mask_method = mrt.make_brain_mask(
             mask_img, ref3d, affine, vol_shape, method=maskMethod, frac=maskFrac,
             maskFraction=maskFraction, maskPercentile=maskPercentile, work_dir=tmpPath)
@@ -311,7 +258,7 @@ for vol in range(1, nVols + 1):
               f"-> {int(brain_mask_flat.sum())} voxels ({frac:.1f}% of FOV)")
         if frac < 3.0 or frac > 75.0:
             print("  [warn] mask coverage looks off — inspect outDir/live/brain_mask.nii.gz; "
-                  "try maskMethod='bet'/'epi', maskSource='func', or tune maskFrac.")
+                  "try maskMethod='bet'/'epi'/'threshold', or tune maskFrac.")
         try:
             nib.save(nib.Nifti1Image(brain_mask_flat.reshape(vol_shape).astype(np.uint8), affine),
                      os.path.join(liveDir, 'brain_mask.nii.gz'))
@@ -426,12 +373,11 @@ for vol in range(1, nVols + 1):
             n_slices=nSlices, z_cuts=(zCuts or None), contrast_label=glmLabel,
             voxel_traces=vtraces)
 
-if streamId is not None:
-    try:
-        archive.appendBidsRun(currentBidsRun)
-    except Exception as e:
-        print(f"[bids] archive append skipped: {e}")
-    bidsInterface.closeStream(streamId)
+try:
+    archive.appendBidsRun(currentBidsRun)
+except Exception as e:
+    print(f"[bids] archive append skipped: {e}")
+bidsInterface.closeStream(streamId)
 
 # ---- end of run: guaranteed final peak-voxel plot using the COMPLETE series
 #      (the per-frame writes above already show these rows live throughout the
