@@ -103,6 +103,9 @@ zCuts = mrt.parse_float_list(getattr(cfg, 'zCuts', []))   # fixed axial levels i
 baselineFramesCfg = int(getattr(cfg, 'baselineFrames', -1))  # -1 = auto (frames before 1st event)
 saveGif = bool(getattr(cfg, 'saveGif', True))             # replay-able activation GIF at end of run
 gifFps = int(getattr(cfg, 'gifFps', 8))                   # GIF playback speed (frames/sec)
+dicomTimeout = float(getattr(cfg, 'dicomTimeout', 30.0))  # seconds to wait per volume (dicom mode)
+                                                           # before raising -- rtCommon's own default
+                                                           # is only 5s, too short for real scanner gaps
 maskFraction = float(cfg.maskFraction)
 maskPercentile = float(cfg.maskPercentile)
 liveEveryTR = int(cfg.liveEveryTR)
@@ -233,12 +236,26 @@ def fetch_volume(vol):
     """Return a 3D nibabel image for 1-based volume index `vol`, from whichever
     source is active. Appends to the BIDS run for stream sources. Uses the
     already-resolved `TR` (not raw cfg.demoStep, which is the string "auto"
-    when TR was inferred rather than a number)."""
+    when TR was inferred rather than a number).
+
+    In dicom mode, rtCommon's own getIncremental()/getImageData() already
+    poll quietly for the file to appear -- but only for 5s by default, which
+    is too short for a real scanner (there's often a real gap before the
+    first volume, or an occasional slow one mid-scan). `dicomTimeout` (config,
+    default 30s) extends that wait so a normal startup delay doesn't crash
+    the run; it only raises once nothing has arrived for that long."""
     if replaySource is not None:
         if TR:
             _time.sleep(TR)   # mimic realtime TR pacing
         return replaySource.get_volume(vol - 1)
-    inc = bidsInterface.getIncremental(streamId, volIdx=vol, demoStep=TR)
+    try:
+        inc = bidsInterface.getIncremental(streamId, volIdx=vol, demoStep=TR, timeout=dicomTimeout)
+    except Exception as e:
+        raise RuntimeError(
+            f"No DICOM for volume {vol} arrived within dicomTimeout={dicomTimeout:g}s. "
+            "Is the scanner / dicom_bridge.py / mock_scanner.py actually running and "
+            "pointed at this dicomDir? Raise dicomTimeout in the toml if the scanner "
+            "just starts slowly.") from e
     currentBidsRun.appendIncremental(inc)
     return inc.image
 

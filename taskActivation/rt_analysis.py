@@ -464,6 +464,14 @@ def _brain_z_cuts(ref3d, affine, n_slices, min_frac=0.02):
     falls back to the plain slice-count behavior) if there's nothing usable."""
     import nibabel as nib
     ref3d = np.asarray(ref3d)
+    # Not a bare 3-way unpack: dataSource='dicom' images (from the BIDS
+    # incremental) can carry a trailing singleton dim, e.g. (X, Y, Z, 1)
+    # instead of (X, Y, Z) -- harmless everywhere else since elementwise ops
+    # don't care, but a strict "R, C, nz = ref3d.shape" raises "too many
+    # values to unpack" on it.
+    if ref3d.ndim > 3:
+        extra = ref3d.shape[3:]
+        ref3d = ref3d.reshape(ref3d.shape[:3]) if all(s == 1 for s in extra) else ref3d[..., 0]
     R, C, nz = ref3d.shape
     if nz < 2:
         return None

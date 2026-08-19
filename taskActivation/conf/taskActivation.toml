@@ -53,6 +53,9 @@ subjectNum = 101
 dicomNamePattern = "demo_{RUN:06d}_{TR:06d}.dcm"   # demo_SeriesNumber_InstanceNumber (zero-padded)
 minExpectedDicomSize = 300000
 runNum = [1]
+dicomTimeout = 30.0        # seconds to wait for EACH volume's DICOM before raising
+                           # (rtCommon's own default is only 5s -- too short for a real
+                           # scanner's startup gap or an occasional slow volume)
 
 # ---- analysis (registration-free) ----
 fwhm = 5                   # smoothing FWHM (mm)

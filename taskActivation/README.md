@@ -61,10 +61,12 @@ below.
 PROJ_NAME=taskActivation
 PROJ_DIR=/full/path/to/taskActivation
 DICOM_DIR=/full/path/to/dicomDir      # only needed for dataSource = "dicom"
+OUT_DIR=/full/path/to/outDir          # where current.png / motion.png / the GIF land
 
 docker run -it --rm \
   -v $PROJ_DIR:/rt-cloud/projects/$PROJ_NAME \
   -v $DICOM_DIR:/rt-cloud/projects/$PROJ_NAME/dicomDir \
+  -v $OUT_DIR:/rt-cloud/outDir \
   brainiak/rtcloud:latest python projects/$PROJ_NAME/$PROJ_NAME.py
 ```
 
@@ -80,10 +82,12 @@ answer **y** (the `-it` flag keeps the container interactive so you can type
 it). This runs `webInterface`/`subjInterface`/`dataInterface` locally in the
 same process instead of over RPC.
 
-Outputs (`outDir/live/current.png`, `motion.tsv`, `motion.png`, etc.) are
-written inside the container at `/rt-cloud/outDir/live`. To inspect them from
-the host, add `-v $OUT_DIR:/rt-cloud/outDir` to the command above and point a
-viewer at `$OUT_DIR/live` (see [Data outputs to expect](#data-outputs-to-expect)).
+`OUT_DIR` is mounted by default here specifically so you can actually see the
+outputs: without it, `outDir/live/current.png`, `motion.png`, the end-of-run
+GIF, etc. are written *inside* the `--rm` container and vanish the moment it
+exits — you'd never see them on the host at all. With it mounted, they appear
+in `$OUT_DIR/live` as the run progresses (see
+[Data outputs to expect](#data-outputs-to-expect)).
 
 **Full project interface (browser dashboard):** if you'd rather use rt-cloud's
 web UI (login `test`/`test`, a **Data Plots** tab for the live ROI trace), run
@@ -172,6 +176,16 @@ to find and hardcode it. It waits up to `demoStepAutoTimeout` seconds
 if nothing arrives in time, so start the scanner / `dicom_bridge.py` /
 `mock_scanner.py` first. A numeric `demoStep` always overrides
 auto-inference and behaves exactly as before.
+
+**3. Don't let a normal startup gap crash the run.** Each volume fetch waits
+up to `dicomTimeout` seconds (default 30) for its DICOM to appear before
+raising — rtCommon's own default is only 5s, which is routinely too short
+for the real gap before a scan starts (or an occasional slow volume
+mid-scan). If nothing arrives within `dicomTimeout`, you get a clear
+`RuntimeError` telling you to check that the scanner / `dicom_bridge.py` /
+`mock_scanner.py` is actually running and pointed at this `dicomDir` — not a
+raw rtCommon traceback. Raise `dicomTimeout` further if your site's startup
+delay routinely runs longer.
 
 **Other subjects/runs/tasks:** point `taskName` + `eventsFile` at your own
 design (see [How it works](#how-it-works)), and set `dicomNamePattern` +

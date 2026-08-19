@@ -69,8 +69,10 @@ full command; in short:
 
 ```bash
 PROJ_DIR=/full/path/to/taskActivation
+OUT_DIR=/full/path/to/outDir
 docker run -it --rm \
   -v $PROJ_DIR:/rt-cloud/projects/taskActivation \
+  -v $OUT_DIR:/rt-cloud/outDir \
   brainiak/rtcloud:latest python projects/taskActivation/taskActivation.py
 ```
 
@@ -79,10 +81,11 @@ you should see `Data source: nifti | volumes: N` (N is however many timepoints
 are in that OpenNeuro run — currently 185 for HcpMotor), a `Brain mask: ...`
 line with a coverage percentage roughly in the 20–45% range (much lower or
 higher usually means `maskMethod`/`maskFrac` needs adjusting for your data),
-then one `--- HcpMotor | vol k/N ---` line per volume. If you mounted `outDir` to the
-host (`-v $OUT_DIR:/rt-cloud/outDir`), open `$OUT_DIR/live/current.png`
-partway through — you should see a real brain (not noise) with a labeled
-condition in the title. Run the same command with `--config
+then one `--- HcpMotor | vol k/N ---` line per volume. Partway through, open
+`$OUT_DIR/live/current.png` on the host — you should see a real brain (not
+noise) with a labeled condition in the title. (Skip `-v $OUT_DIR:...` and
+you'll never see these — they're written inside the `--rm` container and
+vanish when it exits.) Run the same command with `--config
 projects/taskActivation/conf/taskActivation_gambling.toml` to check the
 HcpGambling config the same way.
 
@@ -100,6 +103,7 @@ volumes instead of a real scanner.
    docker run -it --rm \
      -v $PROJ_DIR:/rt-cloud/projects/taskActivation \
      -v $DICOM_DIR:/rt-cloud/projects/taskActivation/dicomDir \
+     -v $OUT_DIR:/rt-cloud/outDir \
      brainiak/rtcloud:latest python projects/taskActivation/taskActivation.py \
      --config projects/taskActivation/conf/<your-dicom-toml>
    ```
@@ -111,11 +115,13 @@ volumes instead of a real scanner.
 
 **What to look for:** the analysis log should show `Data source: dicom |
 volumes: N`, then process volumes as they arrive from the mock scanner
-(there's no download step here). If you instead see
-`rtCommon.errors.RequestError: ... Dicom file ... not found or corrupted`,
-the mock scanner either isn't running yet or is writing to a different folder
-than the container has mounted — start it first, or use `--no-delay` to write
-the whole run up front before starting the analysis.
+(there's no download step here). Each volume waits up to `dicomTimeout`
+seconds (default 30) before giving up, so a normal startup gap won't crash
+the run — but if you see `RuntimeError: No DICOM for volume N arrived within
+dicomTimeout=...s`, the mock scanner either isn't running yet or is writing
+to a different folder than the container has mounted — start it first, or
+use `--no-delay` to write the whole run up front before starting the
+analysis.
 
 ## 6. Sanity-checking `dicom_bridge.py` before a real scan
 
