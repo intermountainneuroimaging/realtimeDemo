@@ -58,7 +58,6 @@ dicomTimeout = 30.0        # seconds to wait for EACH volume's DICOM before rais
 
 # ---- analysis (registration-free) ----
 fwhm = 5                   # smoothing FWHM (mm)
-roiRadius = 4              # spherical ROI radius (voxels) on each peak
 mapThreshPct = 0.5         # %-signal-change threshold for the per-frame activation overlay
 contrastThresh = 2.0       # GLM map threshold (z units when glmZscore=true)
 driftOrder = 1             # polynomial drift terms in the GLM (per-run)
@@ -70,7 +69,6 @@ nSlices = 6                # number of axial slices in the mosaic (used when zCu
 zCuts = []                 # fixed axial slice positions in mm, e.g. [-20,-5,10,25,40,55]; [] = auto
 baselineFrames = -1        # -1 = auto: use all frames before the first event as baseline
 maskPercentile = 98        # brain mask = ref > maskFraction * p[maskPercentile]
-maskSource = "sbref"        # which image to mask from: 'sbref' or 'func'
 maskMethod = "bet"          # 'bet' (FSL skull-strip; removes skull/neck) | 'epi' | 'threshold'
 maskFrac = 0.35             # BET fractional-intensity threshold (lower = larger brain)
 maskFraction = 0.12

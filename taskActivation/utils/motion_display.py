@@ -8,7 +8,7 @@ mm; rotations (rx, ry, rz) are converted to mm-equivalent at a 50 mm head radius
 so they share the same axis. Refreshes as each new volume arrives.
 
 Run manually, on any machine that can see the live folder:
-    python motion_display.py /rt-cloud/outDir/live
+    python utils/motion_display.py /rt-cloud/outDir/live   (from taskActivation/)
 -----------------------------------------------------------------------------"""
 import os
 import sys

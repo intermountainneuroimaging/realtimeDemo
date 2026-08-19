@@ -72,27 +72,3 @@ class NiftiReplaySource:
         import nibabel as nib
         vol = np.asarray(self.img.dataobj[..., volIdx])
         return nib.Nifti1Image(vol, self.affine, self.header)
-
-
-def sbref_path_for(boldPath):
-    """Path of the single-band reference (sbref) that sits next to a bold file."""
-    if boldPath.endswith('_bold.nii.gz'):
-        return boldPath[:-len('_bold.nii.gz')] + '_sbref.nii.gz'
-    if boldPath.endswith('_bold.nii'):
-        return boldPath[:-len('_bold.nii')] + '_sbref.nii'
-    return None
-
-
-def mask_from_sbref(sbrefPath, maskFraction=0.12, maskPercentile=98):
-    """Brain mask computed from the sbref image (higher SNR than a single EPI vol).
-    Returns (mask3d, sbref3d) or (None, None) if unavailable."""
-    import nibabel as nib
-    import rt_analysis as mrt
-    if not sbrefPath or not os.path.exists(sbrefPath):
-        return None, None
-    img = nib.load(sbrefPath)
-    data = img.get_fdata()
-    if data.ndim == 4:                 # average over time if the sbref is 4D
-        data = data.mean(axis=3)
-    mask = mrt.compute_brain_mask(data, maskFraction, maskPercentile, affine=img.affine)
-    return mask, data

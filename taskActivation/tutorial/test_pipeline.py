@@ -20,8 +20,8 @@ import nibabel as nib
 from scipy.ndimage import gaussian_filter
 
 currPath = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(os.path.dirname(currPath))   # taskActivation/ -- for rt_analysis
-sys.path.append(currPath)                    # this folder -- for hcp_replay
+sys.path.append(os.path.join(os.path.dirname(currPath), 'utils'))   # taskActivation/utils -- for rt_analysis
+sys.path.append(currPath)                                           # this folder -- for hcp_replay
 import rt_analysis as mrt
 import hcp_replay as hcp
 mrt.ensure_nilearn()
@@ -29,7 +29,7 @@ mrt.ensure_nilearn()
 liveDir = os.path.join(currPath, '_test_live')
 os.makedirs(liveDir, exist_ok=True)
 
-TR = 2.0; hrf_delay = 2; roiRadius = 4; mapThreshPct = 0.5
+TR = 2.0; hrf_delay = 2; mapThreshPct = 0.5
 events = mrt.read_events_tsv(os.path.join(os.path.dirname(currPath), 'study_design',
                                           'HcpMotor_acq-ap_events.tsv'))
 last = max(o + d for o, d, _ in events)
@@ -73,38 +73,50 @@ def make_volume(v):
     vol = BASE + rng.normal(0, 8, shape) + 0.04*BASE*bl[v]*rM1 + 0.04*BASE*br[v]*lM1
     return gaussian_filter(vol*brain, 1.2) * brain
 
-# ---- run the NEW analysis loop (mirrors taskActivation.py) ----
-# sbref mask: write a synthetic sbref next to a fake bold and mask from it
-sbref3d = make_volume(0)
-boldP = os.path.join(liveDir, 'sub-01_ses-03_task-HcpMotor_acq-ap_bold.nii.gz')
-sbrefP = hcp.sbref_path_for(boldP)
-nib.save(nib.Nifti1Image(sbref3d.astype(np.float32), affine), sbrefP)
-sb_mask, sb_img = hcp.mask_from_sbref(sbrefP)
-bmask = (sb_mask.flatten() if sb_mask is not None else mrt.compute_brain_mask(make_volume(0)).flatten())
-ref3d = sbref3d; mrt.write_reference(liveDir, ref3d, affine)
-baseline_sum = None; baseline_mean = None
-fb_sum = None; fb_n = 0; roi = None; roi_peak = None
+# ---- run the SAME analysis loop as taskActivation.py: the brain mask is
+#      built from the AVERAGE of the baseline (pre-task) frames -- no
+#      separate sbref/reference scan needed ----
+pre_baseline_imgs = []
+baseline_mean = None; bmask = None; mask_idx = None; Yglm = None; mask_method = None
+fb_sum = None; fb_n = 0; roi_peak = None
 Xglm, glm_names = mrt.make_glm_design(events, nVols, TR, drift_order=1)
-mask_idx = np.where(bmask)[0]; Yglm = np.zeros((nVols, mask_idx.size), np.float32)
 motion_rows = []
 roi_tr = []; glob_tr = []; cond_tr = []
 last_contrast = None; last_condlabel = None
 for vol in range(1, nVols + 1):
     cond = int(design[(vol-1)-hrf_delay]) if (vol-1-hrf_delay) >= 0 else 3
-    img = make_volume(vol-1).flatten() * bmask
-    Yglm[vol-1] = img[mask_idx]
+    img_raw = make_volume(vol-1).flatten()
     motion_rows.append([vol, 0.001*vol, 0.0, 0.0, 0.02*np.sin(vol/5.0), 0.0, 0.0])  # synthetic motion
+
     if vol <= baselineN:
-        baseline_sum = img.copy() if baseline_sum is None else baseline_sum + img
-        if vol == baselineN: baseline_mean = baseline_sum / baselineN
+        pre_baseline_imgs.append(img_raw)
+    if vol == baselineN:
+        baseline_mean_full = np.mean(pre_baseline_imgs, axis=0)
+        baselineP = os.path.join(liveDir, '_baseline_avg.nii.gz')
+        nib.save(nib.Nifti1Image(baseline_mean_full.reshape(shape).astype(np.float32), affine), baselineP)
+        bmask, mask_method = mrt.make_brain_mask(baselineP, baseline_mean_full.reshape(shape),
+                                                  affine, shape, method='bet')
+        ref3d = (baseline_mean_full * bmask).reshape(shape)
+        mrt.write_reference(liveDir, ref3d, affine)
+        mask_idx = np.where(bmask)[0]
+        Yglm = np.zeros((nVols, mask_idx.size), np.float32)
+        for i, raw in enumerate(pre_baseline_imgs):
+            Yglm[i] = (raw * bmask)[mask_idx]
+        baseline_mean = baseline_mean_full * bmask
+
+    if bmask is not None:
+        img = img_raw * bmask
+        if vol > baselineN:                 # baseline rows already filled above
+            Yglm[vol - 1] = img[mask_idx]
+
     if baseline_mean is not None:
         psc = mrt.percent_change(img, baseline_mean, bmask); psc3d = psc.reshape(shape)
         if vol in firstBlockVols:
             fb_sum = psc.copy() if fb_sum is None else fb_sum + psc; fb_n += 1
-        if roi is None and fb_n > 0 and vol >= max(firstBlockVols):
+        if roi_peak is None and fb_n > 0 and vol >= max(firstBlockVols):
             roi_peak = mrt.peak_voxel((fb_sum/fb_n).reshape(shape), bmask.reshape(shape))
-            roi = mrt.sphere_roi(shape, roi_peak, roiRadius).flatten() & bmask
-        roi_psc = float(psc[roi].mean()) if (roi is not None and roi.sum() > 0) else 0.0
+        # data-plot value: %change at the ROI's center (peak) voxel
+        roi_psc = float(psc3d[roi_peak]) if roi_peak is not None else 0.0
         glob = float(psc[bmask].max())
         if roi_peak is not None:
             rp = mrt.peak_voxel(psc3d, bmask.reshape(shape))
@@ -143,11 +155,9 @@ checks['roi_right_hemisphere'] = roi_peak is not None and roi_peak[0] > cx
 checks['roi_psc_tracks_first_effector'] = (
     roi_tr[cond_tr == 1].mean() > max(0.2, 3 * abs(roi_tr[cond_tr == 0].mean())))
 checks['roi_psc_low_in_rest'] = abs(roi_tr[cond_tr == 0].mean()) < 0.3
-checks['sbref_mask_used'] = sb_mask is not None and int(bmask.sum()) > 100
-checks['sbref_path_builder'] = hcp.sbref_path_for('/x/sub-01_task-X_bold.nii.gz') == '/x/sub-01_task-X_sbref.nii.gz'
+checks['baseline_mask_used'] = bmask is not None and int(bmask.sum()) > 100
 # mask dispatcher: BET requested but absent in sandbox -> must fall back gracefully
-_mflat, _msrc = mrt.make_brain_mask(sbrefP, sbref3d, affine, shape, method='bet')
-checks['mask_dispatch_falls_back'] = _msrc in ('bet', 'epi', 'threshold') and 0.02 < _mflat.mean() < 0.8
+checks['mask_dispatch_falls_back'] = mask_method in ('bet', 'epi', 'threshold') and 0.02 < bmask.mean() < 0.8
 checks['condition_label_left_hand'] = ('left hand' in [
     mrt.active_condition_label(events, t) for t in np.arange(0, last, 1.0)])
 checks['condition_label_rest'] = mrt.active_condition_label(events, 0.0) == 'REST'

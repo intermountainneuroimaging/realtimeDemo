@@ -99,7 +99,7 @@ Wants=network-online.target
 Type=simple
 User=youruser
 WorkingDirectory=/full/path/to/taskActivation
-ExecStart=/usr/bin/python3 /full/path/to/taskActivation/dicom_bridge.py \
+ExecStart=/usr/bin/python3 /full/path/to/taskActivation/utils/dicom_bridge.py \
   --config /full/path/to/taskActivation/conf/taskActivation.toml \
   --source /path/to/real/scanner/drop/folder \
   --dest /path/to/dicomDir

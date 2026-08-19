@@ -298,7 +298,7 @@ def make_brain_mask(image_path, ref3d, affine, vol_shape, method='bet', frac=0.3
     bet -> nilearn EPI -> intensity threshold. Returns (mask_flat_bool, source)."""
     import nibabel as nib
     vol_shape = tuple(vol_shape)
-    # source image data (sbref or func volume) for the epi/threshold methods
+    # source image data (e.g. a baseline-average reference) for the epi/threshold methods
     if image_path and os.path.exists(image_path):
         im = nib.load(image_path); d = im.get_fdata(); aff = im.affine
         if d.ndim == 4:
@@ -325,9 +325,10 @@ def make_brain_mask(image_path, ref3d, affine, vol_shape, method='bet', frac=0.3
 
 
 def compute_brain_mask(ref3d, maskFraction=0.12, maskPercentile=98, affine=None):
-    """Brain mask for a single EPI/sbref volume. nilearn EPI mask when an affine
-    is given (adaptive), else an intensity threshold. (Kept for compatibility;
-    `make_brain_mask` is the fuller dispatcher that also tries FSL BET.)"""
+    """Brain mask for a single EPI/reference volume. nilearn EPI mask when an
+    affine is given (adaptive), else an intensity threshold. (Kept for
+    compatibility; `make_brain_mask` is the fuller dispatcher that also tries
+    FSL BET.)"""
     if affine is not None:
         m = _epi_mask(ref3d, affine)
         if m is not None:
@@ -354,11 +355,6 @@ def zmap_from_diff(diff_flat, mask_flat):
 def peak_voxel(zmap3d, mask3d):
     masked = np.where(mask3d, zmap3d, -np.inf)
     return tuple(int(c) for c in np.unravel_index(int(np.argmax(masked)), masked.shape))
-
-
-def sphere_roi(shape, center, radius):
-    ii, jj, kk = np.ogrid[:shape[0], :shape[1], :shape[2]]
-    return ((ii - center[0])**2 + (jj - center[1])**2 + (kk - center[2])**2) <= radius**2
 
 
 def voxel_to_mm(affine, ijk):
@@ -410,14 +406,17 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
                      peak=None, condAName='A', condBName='B', caption=None, cmap='RdBu_r',
                      contrast3d=None, contrast_thresh=2.0,
                      contrast_label='LEFT vs RIGHT (cumulative)', n_slices=6, z_cuts=None,
-                     voxel_traces=None):
+                     voxel_traces=None, frame=None):
     """Realtime plot via nilearn.plot_stat_map as a single-row AXIAL MOSAIC.
     Slice positions: `z_cuts` (a list of z-coords in mm) if given, else `n_slices`
     auto-selected levels. Top row = per-frame map; when `contrast3d` is given a
     SECOND mosaic row below shows the GLM contrast. `voxel_traces` (optional;
     updated live every frame once the model is estimable, not just at the end
     of the run) adds one line-plot row per entry below the brain rows, each
-    showing a peak voxel's measured signal vs its HRF-predicted signal."""
+    showing a peak voxel's measured signal vs its HRF-predicted signal.
+    `frame` (optional), if given, is stamped in large bold text in the top-left
+    corner of the mosaic -- a glance-able frame/volume counter distinct from
+    the smaller caption below the image."""
     try:
         import nibabel as nib
         from nilearn import plotting
@@ -453,6 +452,16 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
                            figure=fig, axes=ax_top)
     ax_top.set_title(f"{title}  ({cap})", color='white', fontsize=11,
                      fontweight='bold', y=-0.22)
+    if frame is not None:
+        # nilearn's plot_stat_map draws its own slice/colorbar axes on top of
+        # ax_top, which would occlude anything drawn directly on ax_top itself
+        # (only content OUTSIDE its bbox, like the title above, survives) --
+        # so this is placed via fig.text at ax_top's own (possibly
+        # nilearn-adjusted) bounding box instead, which always draws on top.
+        bbox = ax_top.get_position()
+        fig.text(bbox.x0 + 0.006, bbox.y1 - 0.015, f"frame {int(frame)}",
+                 color='yellow', fontsize=16, fontweight='bold', va='top', ha='left',
+                 bbox=dict(facecolor='black', alpha=0.7, pad=3, edgecolor='none'))
     if has_con:
         cimg = nib.Nifti1Image(np.asarray(contrast3d, np.float32), affine)
         plotting.plot_stat_map(cimg, bg_img=bg, threshold=contrast_thresh,
@@ -460,7 +469,17 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
                                cmap='RdBu_r', black_bg=True, figure=fig, axes=ax_bot)
         ax_bot.set_title(contrast_label, color='white', fontsize=10,
                          fontweight='bold', y=-0.22)
-    # end-of-run: measured vs HRF-predicted timecourse at each condition's peak voxel
+    # end-of-run: measured vs HRF-predicted timecourse at each condition's peak voxel.
+    # All traces share the same underlying time axis (one glm_voxel_traces call,
+    # same X/Y), but each trace's OWN stimulus blocks (axvspan, different onsets
+    # per condition) can otherwise pull matplotlib's per-axes autoscale to a
+    # different x-range -- lock every trace axes to the same explicit xlim so
+    # the two rows visually line up.
+    t_xlim = None
+    if traces:
+        t_lo = min(float(np.asarray(tr['t']).min()) for tr in traces)
+        t_hi = max(float(np.asarray(tr['t']).max()) for tr in traces)
+        t_xlim = (t_lo, t_hi)
     for i, tr in enumerate(traces):
         ax = fig.add_subplot(gs[n_brain + i], facecolor='black')
         t = np.asarray(tr['t'])
@@ -470,6 +489,7 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
         ax.plot(t, tr['predicted'], color=tr.get('color', 'tab:red'), lw=1.8,
                 ls='--', label='HRF-predicted')
         ax.axhline(0, color='gray', lw=0.5)
+        ax.set_xlim(*t_xlim)
         ax.set_title(tr['title'], color='white', fontsize=9)
         ax.set_xlabel('time (s)', color='white'); ax.set_ylabel('% \u0394S', color='white')
         ax.tick_params(colors='white', labelsize=7)
@@ -482,7 +502,7 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
 
 
 def _matplotlib_montage_png(out_png, zmap3d, ref3d, peak, thresh, title,
-                            condAName='A', condBName='B'):
+                            condAName='A', condBName='B', frame=None):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -498,6 +518,10 @@ def _matplotlib_montage_png(out_png, zmap3d, ref3d, peak, thresh, title,
         ax.imshow(o, cmap='RdBu_r', vmin=-vmax, vmax=vmax, alpha=0.85)
         ax.set_title(t, fontsize=10); ax.axis('off')
     fig.suptitle(f"{title}  (red {condAName}>{condBName} / blue {condBName}>{condAName})", fontsize=11)
+    if frame is not None:
+        axes[0].text(0.02, 0.98, f"frame {int(frame)}", transform=axes[0].transAxes,
+                     color='yellow', fontsize=13, fontweight='bold', va='top', ha='left',
+                     bbox=dict(facecolor='black', alpha=0.6, pad=3, edgecolor='none'))
     fig.tight_layout(); fig.savefig(out_png, dpi=110); plt.close(fig)
 
 
@@ -506,6 +530,53 @@ def write_reference(liveDir, ref3d, affine):
     os.makedirs(liveDir, exist_ok=True)
     np.savez_compressed(os.path.join(liveDir, 'reference.npz'),
                         ref=np.asarray(ref3d, np.float32), affine=np.asarray(affine, np.float32))
+
+
+_LIVE_VIEWER_HTML = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Real-time activation viewer</title>
+<style>
+  body { background: #000; color: #ddd; font-family: sans-serif; margin: 0; padding: 12px; }
+  h2 { font-size: 13px; font-weight: normal; color: #999; margin: 4px 0; }
+  img { max-width: 100%; display: block; margin-bottom: 16px; border: 1px solid #333; }
+</style>
+</head>
+<body>
+  <h2>current.png</h2>
+  <img id="current" src="current.png" alt="current.png">
+  <h2>motion.png</h2>
+  <img id="motion" src="motion.png" alt="motion.png">
+  <script>
+    // reload each image (not the page) on a cache-busting query string, so
+    // the browser always shows the latest file on disk without a full-page
+    // refresh/flicker.
+    function refresh() {
+      var t = Date.now();
+      document.getElementById('current').src = 'current.png?t=' + t;
+      document.getElementById('motion').src = 'motion.png?t=' + t;
+    }
+    setInterval(refresh, 500);
+  </script>
+</body>
+</html>
+"""
+
+
+def write_live_viewer_html(liveDir):
+    """Write liveDir/viewer.html once: a plain browser page (no Python/matplotlib
+    needed to view it) that shows current.png + motion.png side by side and
+    reloads both every 500ms, so opening it in any browser pointed at outDir/live
+    is enough to watch the run live. Static content -- written once at startup,
+    not re-written per volume."""
+    os.makedirs(liveDir, exist_ok=True)
+    out = os.path.join(liveDir, 'viewer.html')
+    tmp = out + '.tmp'
+    with open(tmp, 'w') as f:
+        f.write(_LIVE_VIEWER_HTML)
+    os.replace(tmp, out)
+    return out
 
 
 def write_live_update(liveDir, run, vol, runLabel, zmap3d, ref3d, affine, peak, thresh,
@@ -550,10 +621,10 @@ def write_live_update(liveDir, run, vol, runLabel, zmap3d, ref3d, affine, peak, 
                               caption=caption, contrast3d=contrast3d,
                               contrast_thresh=contrast_thresh, n_slices=n_slices,
                               z_cuts=z_cuts, contrast_label=contrast_label,
-                              voxel_traces=voxel_traces)
+                              voxel_traces=voxel_traces, frame=vol)
         if not ok:
             _matplotlib_montage_png(out_png, zmap3d, ref3d, peak, thresh, title,
-                                    condAName, condBName)
+                                    condAName, condBName, frame=vol)
     except Exception as e:
         print(f"[live] activation plot skipped: {e}")
     return fn
@@ -612,7 +683,8 @@ def build_activation_gif(liveDir, run, fps=8, out_path=None, verbose=True):
                 caption=(str(b['caption']) if b['caption'] else None),
                 contrast3d=contrast3d, contrast_thresh=float(b['contrast_thresh']),
                 contrast_label=str(b['contrast_label']), n_slices=int(b['n_slices']),
-                z_cuts=(b['z_cuts'] if b['z_cuts'].size else None), voxel_traces=vtraces)
+                z_cuts=(b['z_cuts'] if b['z_cuts'].size else None), voxel_traces=vtraces,
+                frame=vol)
         except Exception as e:
             ok = False
             if verbose:
@@ -798,40 +870,6 @@ def read_mcflirt_par(par_path):
         return [0.0] * 6
 
 
-def write_motion_png(liveDir, motion_rows, TR=2.0, head_radius_mm=50.0):
-    """Render the live head-motion plot to liveDir/motion.png with a headless
-    (Agg) backend, so a motion image always exists in outDir/live even when no
-    interactive window is available. One line per parameter (tx,ty,tz,rx,ry,rz),
-    x = time (s), y = mm (rotations converted to mm at `head_radius_mm`)."""
-    if not motion_rows:
-        return False
-    try:
-        import matplotlib
-        if 'agg' not in matplotlib.get_backend().lower():
-            matplotlib.use('Agg', force=True)
-        import matplotlib.pyplot as plt
-    except Exception:
-        return False
-    m = np.asarray(motion_rows, float)              # cols: vol, rx, ry, rz, tx, ty, tz
-    t = m[:, 0] * TR
-    series = [('tx', m[:, 4]), ('ty', m[:, 5]), ('tz', m[:, 6]),
-              ('rx', m[:, 1] * head_radius_mm), ('ry', m[:, 2] * head_radius_mm),
-              ('rz', m[:, 3] * head_radius_mm)]
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
-    os.makedirs(liveDir, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(10, 5))
-    for (lab, y), c in zip(series, colors):
-        ax.plot(t, y, label=lab, color=c, lw=1.5)
-    ax.axhline(0, color='gray', lw=0.5)
-    ax.set_xlabel('time (s)'); ax.set_ylabel('head motion (mm)')
-    ax.legend(loc='upper left', ncol=6, fontsize=8)
-    ax.set_title('Real-time head motion (mcflirt): tx,ty,tz + rx,ry,rz @ 50 mm', fontsize=10)
-    tmp = os.path.join(liveDir, 'motion.png.tmp')
-    fig.tight_layout(); fig.savefig(tmp, dpi=110, format='png'); plt.close(fig)
-    os.replace(tmp, os.path.join(liveDir, 'motion.png'))
-    return True
-
-
 def write_motion(liveDir, motion_rows, TR=2.0):
     """Atomically (re)write motion.tsv with all rows seen so far. Each input row is
     [vol, rot_x, rot_y, rot_z, trans_x, trans_y, trans_z]; a time_s column
@@ -848,10 +886,13 @@ def write_motion(liveDir, motion_rows, TR=2.0):
 
 
 def write_motion_png(liveDir, motion_rows, TR=2.0, head_radius_mm=50.0, fd_thresh=0.5):
-    """Render the live head-motion plot to outDir/live/motion.png with TWO rows:
-    (1) one line per parameter, x = time [s], y = head motion [mm] (rotations
-    converted to mm-equivalent at `head_radius_mm`); (2) framewise displacement
-    (FD, Power et al.) per volume on the same image. Headless-safe (Agg canvas)."""
+    """Render the live head-motion plot to outDir/live/motion.png as a SINGLE
+    panel -- black background, white text, bold title -- matching current.png's
+    look so the two sit well together (e.g. side by side in viewer.html): one
+    line per rigid-body parameter (tx,ty,tz,rx,ry,rz, rotations converted to
+    mm-equivalent at `head_radius_mm`) plus framewise displacement (FD, Power
+    et al.) in bold white on the same axes/timescale. Headless-safe (Agg
+    canvas)."""
     if not motion_rows:
         return False
     try:
@@ -872,27 +913,28 @@ def write_motion_png(liveDir, motion_rows, TR=2.0, head_radius_mm=50.0, fd_thres
     else:
         fd = np.zeros(len(m))
 
-    fig = Figure(figsize=(10, 7), facecolor='white')
+    fig = Figure(figsize=(13, 4.5), facecolor='black')
     FigureCanvasAgg(fig)
-    ax1 = fig.add_subplot(2, 1, 1)
-    ax2 = fig.add_subplot(2, 1, 2, sharex=ax1)
+    ax = fig.add_subplot(1, 1, 1, facecolor='black')
     for lab, y, color in series:
-        ax1.plot(t, y, label=lab, color=color, lw=1.5)
-    ax1.axhline(0, color='gray', lw=0.5)
-    ax1.set_ylabel('head motion (mm)')
-    ax1.legend(loc='upper left', ncol=6, fontsize=8)
-    ax1.set_title('Real-time head motion (mcflirt): translations + rotations '
-                  f'(rx,ry,rz @ {head_radius_mm:g} mm) in mm', fontsize=9)
-    ax2.plot(t, fd, color='crimson', lw=1.5, label='FD')
-    ax2.axhline(fd_thresh, color='orange', ls='--', lw=0.8, label=f'{fd_thresh:g} mm')
-    ax2.set_ylabel('FD (mm)'); ax2.set_xlabel('time (s)')
-    ax2.legend(loc='upper left', fontsize=8)
-    ax2.set_title(f'Framewise displacement  (max {fd.max():.2f} mm, mean {fd.mean():.2f} mm)',
-                  fontsize=9)
+        ax.plot(t, y, label=lab, color=color, lw=1.2, alpha=0.85)
+    ax.plot(t, fd, color='white', lw=2.0, label='FD')
+    ax.axhline(fd_thresh, color='orange', ls='--', lw=0.8, label=f'FD {fd_thresh:g} mm')
+    ax.axhline(0, color='gray', lw=0.5)
+    ax.set_xlim(0, max(float(t[-1]), TR) if len(t) else TR)
+    ax.set_xlabel('time (s)', color='white')
+    ax.set_ylabel(f'mm (rot @ {head_radius_mm:g} mm)', color='white')
+    ax.tick_params(colors='white', labelsize=8)
+    for s in ax.spines.values():
+        s.set_color('white')
+    ax.legend(loc='upper left', ncol=4, fontsize=8, facecolor='black', labelcolor='white')
+    ax.set_title('Real-time head motion (mcflirt): tx,ty,tz + rx,ry,rz + framewise '
+                 f'displacement  (max FD {fd.max():.2f} mm, mean {fd.mean():.2f} mm)',
+                 color='white', fontsize=10, fontweight='bold')
     fig.tight_layout()
     out = os.path.join(liveDir, 'motion.png')
     tmp = out + '.tmp.png'
-    fig.savefig(tmp, dpi=110); os.replace(tmp, out)
+    fig.savefig(tmp, dpi=110, facecolor='black'); os.replace(tmp, out)
     return True
 
 

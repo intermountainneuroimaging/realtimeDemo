@@ -44,7 +44,10 @@ example validated offline against real HcpGambling data).
 It always streams DICOMs from a real (or mock) scanner via `dicomDir/` — see
 below for how to point that at a real scanner, or
 [TESTING.md](TESTING.md#4-mock-scanner-dicom-streaming--the-full-pipeline-docker--live-path-no-real-scanner)
-to exercise the same path with `mock_scanner.py` instead.
+to exercise the same path with `mock_scanner.py` instead. TR is always
+inferred from the first real DICOM's `RepetitionTime` (waits up to 30s for it
+to appear) rather than hand-copied into a config — correct by construction
+for whatever protocol is actually running.
 
 ## Quick start: direct testing (no web interface)
 
@@ -75,6 +78,15 @@ the script filename. `DICOM_DIR` needs volumes waiting in it before/while the
 run starts — either a real scanner's export folder (via `dicom_bridge.py`,
 below) or `mock_scanner.py` (see [TESTING.md](TESTING.md)).
 
+Running this way (rather than through rt-cloud's own
+`run-projectInterface.sh` / web interface launcher) bypasses whatever sets the
+run number there, so pass `--run` to override the toml's `runNum` without
+editing it — handy for bridging/streaming a different run each session:
+
+```bash
+python projects/$PROJ_NAME/$PROJ_NAME.py --run 2
+```
+
 On startup `ClientInterface()` can't reach a project server inside this
 single-container run, and will ask:
 `Unable to connect to projectServer, continue using localfiles? (y/n):` —
@@ -99,7 +111,7 @@ need `realtime_display.py` (below) for that.
 ## Running with live scanner data
 
 Pointing `dicomDir/` at a **real** scanner's DICOM output (rather than
-`mock_scanner.py`) means dealing with three things a mock run doesn't have to:
+`mock_scanner.py`) means dealing with two things a mock run doesn't have to:
 
 **1. rt-cloud can't match your scanner's real filenames.** rt-cloud's DICOM
 watcher builds one exact, predictable filename per volume with plain
@@ -136,11 +148,11 @@ folder is collision-safe (an SBRef series and a bold series land in
 DICOM_DIR=/full/path/to/dicomDir   # same folder as -v $DICOM_DIR:.../dicomDir in the docker command
 
 # bridge every series found, each kept separate by its own SeriesNumber:
-python dicom_bridge.py --config conf/taskActivation.toml \
+python utils/dicom_bridge.py --config conf/taskActivation.toml \
   --source /path/to/real/scanner/drop/folder --dest $DICOM_DIR
 
 # one-shot backfill (bridge what's there now, then exit):
-python dicom_bridge.py --config conf/taskActivation.toml \
+python utils/dicom_bridge.py --config conf/taskActivation.toml \
   --source /path/to/real/scanner/drop/folder --dest $DICOM_DIR --once
 ```
 
@@ -152,7 +164,7 @@ bridging multiple series would collide):
 
 ```bash
 # only series 3, relabeled as RUN 1 (matches a toml with runNum = [1]):
-python dicom_bridge.py --config conf/taskActivation.toml \
+python utils/dicom_bridge.py --config conf/taskActivation.toml \
   --source /path/to/real/scanner/drop/folder --dest $DICOM_DIR --series 3 --run 1
 ```
 
@@ -167,17 +179,7 @@ you don't have to; see [INSTALLATION.md](INSTALLATION.md#4-setting-up-dicom_brid
 > raw feed always has. `dicom_bridge.py` doesn't change that; it's expected,
 > not a new exposure.
 
-**2. Don't hand-copy the protocol's TR into the toml.** Set `demoStep =
-"auto"` (instead of a number) and `taskActivation.py` will wait for the first
-real DICOM to appear in `dicomDir/` and read its actual
-`RepetitionTime` before building the GLM design — rather than requiring you
-to find and hardcode it. It waits up to `demoStepAutoTimeout` seconds
-(default 30; set that key in the toml to change it) and raises a clear error
-if nothing arrives in time, so start the scanner / `dicom_bridge.py` /
-`mock_scanner.py` first. A numeric `demoStep` always overrides
-auto-inference and behaves exactly as before.
-
-**3. Don't let a normal startup gap crash the run.** Each volume fetch waits
+**2. Don't let a normal startup gap crash the run.** Each volume fetch waits
 up to `dicomTimeout` seconds (default 30) for its DICOM to appear before
 raising — rtCommon's own default is only 5s, which is routinely too short
 for the real gap before a scan starts (or an occasional slow volume
@@ -197,28 +199,30 @@ The nilearn brain plot is not automatic — nothing renders it for you:
 
 | Output | Where it shows |
 |---|---|
-| ROI mean % signal change from baseline, one value per volume | rt-cloud web interface **Data Plots** tab (`webInterface.plotDataPoint` — numbers only) |
-| nilearn % -change activation plot (ortho cut at the ROI / active peak) | written to `outDir/live/current.png` every volume |
+| ROI % signal change from baseline (at the ROI's center/peak voxel), one value per volume | rt-cloud web interface **Data Plots** tab (`webInterface.plotDataPoint` — numbers only) |
+| nilearn % -change activation plot (ortho cut at the ROI / active peak), stamped with the current frame/volume number | written to `outDir/live/current.png` every volume |
 | Full interactive ortho + ROI %-change timecourse | the `realtime_display.py` window, run manually against `outDir/live` |
 | Head motion (6 rigid-body params + framewise displacement) | `outDir/live/motion.tsv` / `motion.png` every volume; `motion_display.py` for a live window |
+| Browser view of `current.png` + `motion.png`, auto-refreshing every 0.5s | `outDir/live/viewer.html` — open directly in any browser, no Python needed |
 | Replay of the whole run's activation maps | `outDir/live/activation_run<N>.gif`, written once at the end of the run |
 
 The **Data Plots** tab can only render numeric line plots, so the brain image
-cannot go there. To see the brain plot, run `realtime_display.py` (or open
-`current.png` in any image viewer) on a machine that can see the
-`outDir/live/` folder:
+cannot go there. Easiest way to see it live: open `outDir/live/viewer.html`
+in any browser (auto-refreshes both images every half second, no setup
+needed). For the full interactive interface instead, run `realtime_display.py`
+on a machine that can see the `outDir/live/` folder:
 
 ```bash
-python realtime_display.py /path/to/rt-cloud/outDir/live
+python utils/realtime_display.py /path/to/rt-cloud/outDir/live
 ```
 
 ### The live figure
 
 - **Top row** — the per-frame % difference from baseline as a single-row
   axial mosaic, updated every volume and labeled with the current condition
-  (e.g. `left hand`, `REST`, `tongue`). Slice positions: set `zCuts` in the
-  toml to a fixed list of z-coordinates in mm, or leave it empty (`[]`) to
-  auto-pick `nSlices` levels (default 6).
+  (e.g. `left hand`, `REST`, `tongue`), with the frame/volume number stamped
+  in the top-left corner. Slice positions: set `zCuts` in the toml to a fixed
+  list of z-coordinates in mm, or leave it empty (`[]`) to auto-pick 6 levels.
 - **Second row** — a separate axial mosaic of a GLM map. An HRF-convolved
   design matrix (one regressor per effector + polynomial drift + intercept)
   is re-fit by OLS on every volume seen so far as data streams in. `glmCondA`
@@ -262,20 +266,23 @@ taskActivation/
 ├── README.md                 # this file — running + outputs
 ├── INSTALLATION.md           # one-time setup
 ├── TESTING.md                # verifying each component
-├── taskActivation.py         # main RT-Cloud analysis (registration-free, task-agnostic, dicom streaming)
-├── rt_analysis.py            # shared helpers: design-from-events, masks, nilearn plots
-├── realtime_display.py       # standalone nilearn/matplotlib viewer (no PsychoPy); run manually
-├── motion_display.py         # standalone head-motion window (also writes motion.png); run manually
-├── mock_scanner.py           # simulate a scanner: stream Enhanced multi-frame DICOMs to dicomDir/
-├── dicom_bridge.py           # bridge a real scanner's raw filenames into rt-cloud's expected pattern
-├── templates/                # anonymized Enhanced multi-frame DICOM header for mock_scanner
-├── test_mock_scanner.py      # tests the mock DICOM scanner (frame pack/unpack + recovery)
-├── make_design.py            # (optional) write static design files for inspection
+├── taskActivation.py         # the ONLY script here: main RT-Cloud analysis
+│                              # (registration-free, task-agnostic, dicom streaming)
 ├── conf/
 │   └── taskActivation.toml   # HcpMotor config (timing, GLM contrast, display settings)
 ├── study_design/
 │   └── HcpMotor_acq-ap_events.tsv    # real ds000244 HcpMotor events (drives the design)
+├── templates/                 # anonymized Enhanced multi-frame DICOM header for mock_scanner
 ├── dicomDir/                  # scanner DICOMs
+├── utils/                     # everything taskActivation.py imports or that supports a live deployment
+│   ├── rt_analysis.py             # shared helpers: design-from-events, masks, nilearn plots
+│   ├── mock_scanner.py            # simulate a scanner: stream Enhanced multi-frame DICOMs to dicomDir/
+│   ├── dicom_bridge.py            # bridge a real scanner's raw filenames into rt-cloud's expected pattern
+│   ├── realtime_display.py        # standalone nilearn/matplotlib viewer (no PsychoPy); run manually
+│   ├── motion_display.py          # standalone head-motion window (also writes motion.png); run manually
+│   └── make_design.py             # (optional) write static design files for inspection
+├── testing/
+│   └── test_mock_scanner.py   # tests the mock DICOM scanner (frame pack/unpack + recovery)
 └── tutorial/                  # offline HCP-data validation of this analysis, no scanner needed
     ├── README.md                        # what it is + sample outputs
     ├── test_pipeline.py                 # offline end-to-end test on the REAL HcpMotor timing
@@ -291,10 +298,14 @@ taskActivation/
 ## Per-volume pipeline (registration-free)
 
 1. DICOM → Nifti via the BIDS incremental
-2. Motion correction to the functional reference (`mcflirt`) — realignment only
+2. Motion correction to volume 1 as the functional reference (`mcflirt`) —
+   realignment only
 3. 5 mm FWHM Gaussian smoothing (`fslmaths`)
-4. Brain mask from the functional reference (BET skull-strip, nilearn EPI
-   mask, or intensity threshold) — no atlas/warp
+4. Brain mask from the **average of the `baselineN` pre-task volumes** (BET
+   skull-strip, nilearn EPI mask, or intensity threshold) — no atlas/warp, no
+   separate sbref/reference scan needed. Built once `baselineN` volumes have
+   arrived; every volume up to that point is buffered and retroactively fed
+   into the GLM once the mask exists.
 5. Accumulate the volume into the running per-condition averages
 6. Update ROI traces, the % signal change map, and the incremental GLM map
 

@@ -40,17 +40,17 @@ force a fixed RUN label instead (e.g. to keep the toml's runNum stable across
 sessions whose real series numbers change); --run requires --series, since
 forcing one RUN value while bridging multiple series would collide.
 
-Usage:
+Usage (run from the taskActivation/ project root):
   # bridge every series found; each gets its own RUN = its real SeriesNumber
-  python dicom_bridge.py --config conf/taskActivation.toml \\
+  python utils/dicom_bridge.py --config conf/taskActivation.toml \\
       --source /Volumes/sambashare/some_session
 
   # only series 3, one-shot backfill of what's already there
-  python dicom_bridge.py --config conf/taskActivation.toml \\
+  python utils/dicom_bridge.py --config conf/taskActivation.toml \\
       --source /Volumes/sambashare/some_session --series 3 --once
 
   # only series 3, but relabel it as RUN 1 (matches a toml with runNum = [1])
-  python dicom_bridge.py --config conf/taskActivation.toml \\
+  python utils/dicom_bridge.py --config conf/taskActivation.toml \\
       --source /Volumes/sambashare/some_session --series 3 --run 1
 -----------------------------------------------------------------------------"""
 import os
@@ -61,12 +61,13 @@ import argparse
 import mock_scanner as mock   # reuses its tiny rtCommon-free toml reader
 import rt_analysis as mrt
 
-HERE = os.path.dirname(os.path.realpath(__file__))
+HERE = os.path.dirname(os.path.realpath(__file__))          # utils/ -- this script's own dir
+PROJECT_ROOT = os.path.dirname(HERE)                         # taskActivation/ -- conf/, dicomDir/
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Bridge real scanner DICOMs into rt-cloud's expected filenames.")
-    ap.add_argument('--config', default=os.path.join(HERE, 'conf', 'taskActivation.toml'))
+    ap.add_argument('--config', default=os.path.join(PROJECT_ROOT, 'conf', 'taskActivation.toml'))
     ap.add_argument('--source', required=True, help='real scanner drop folder to watch')
     ap.add_argument('--dest', default=None, help='dicomDir to bridge into (default: project dicomDir)')
     ap.add_argument('--series', type=int, default=None,
@@ -95,7 +96,7 @@ def main(argv=None):
 
     cfg = mock.load_cfg(args.config)
     pattern = str(cfg.get('dicomNamePattern', 'demo_{RUN:06d}_{TR:06d}.dcm'))
-    dest_dir = args.dest or os.path.join(HERE, 'dicomDir')
+    dest_dir = args.dest or os.path.join(PROJECT_ROOT, 'dicomDir')
     os.makedirs(dest_dir, exist_ok=True)
 
     series_desc = f"series={args.series}" if args.series is not None else "series=ALL"

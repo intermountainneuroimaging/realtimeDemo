@@ -5,14 +5,14 @@ events.tsv, for inspection / offline use.
 The live script (taskActivation.py) builds the design at runtime from the events
 to match the stream's actual volume count, so this static file is only for review.
 Codes: 0=REST, 1=condA, 2=condB, 3=other modeled condition (covariate/cue).
-Usage: python make_design.py [events_tsv] [condA] [condB]
+Usage: python utils/make_design.py [events_tsv] [condA] [condB]   (from taskActivation/)
 -----------------------------------------------------------------------------"""
 import os
 import sys
 import numpy as np
 import rt_analysis as mrt
 
-currPath = os.path.dirname(os.path.realpath(__file__))
+currPath = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))   # taskActivation/ root
 TR = 2.0
 hrf_delay = 2
 events_tsv = sys.argv[1] if len(sys.argv) > 1 else 'HcpMotor_acq-ap_events.tsv'

@@ -17,27 +17,33 @@ eventsFile = "HcpMotor_acq-ap_events.tsv"
 
 # condition display names. cond A = LEFT hand (-> right cortex),
 #                          cond B = RIGHT hand (-> left cortex)
-
-# ---- timing ----
-demoStep = 2.0             # TR (s). Set to "auto" to infer TR from the first real
-                           # DICOM's RepetitionTime instead of hardcoding it (see
-                           # demoStepAutoTimeout below).
-demoStepAutoTimeout = 30.0 # seconds to wait for that first DICOM when demoStep="auto"
-hrf_delay = 2              # ~4 s hemodynamic lag at TR = 2 s
-fallbackNVols = 179        # used only if the stream can't report its length
+#
+# Not configured here (fixed in taskActivation.py -- not deployment-specific):
+# TR is always inferred from the first real DICOM's RepetitionTime; hrf_delay
+# is derived from that TR; nVols falls back to an events-file estimate if the
+# stream can't report its own length; the BIDS 'subject' tag is bookkeeping
+# only. See the AUTO_TR_TIMEOUT / HRF_DELAY_SECONDS / NVOLS_FALLBACK_PADDING /
+# SUBJECT_NUM constants near the top of taskActivation.py.
 
 # ---- scanner (DICOM) streaming ----
-subjectNum = 101
 dicomNamePattern = "demo_{RUN:06d}_{TR:06d}.dcm"   # demo_SeriesNumber_InstanceNumber (zero-padded)
 minExpectedDicomSize = 300000
 runNum = [1]
 dicomTimeout = 30.0        # seconds to wait for EACH volume's DICOM before raising
                            # (rtCommon's own default is only 5s -- too short for a real
                            # scanner's startup gap or an occasional slow volume)
+# demoStep = 2              # TESTING ONLY, commented out by default (defaults to 0 = no delay if
+                           # unset): artificial per-volume delay (s) passed to rtCommon's
+                           # getIncremental, e.g. to pace replay of a dicomDir that's already
+                           # fully written (mock_scanner.py --no-delay). Does NOT set TR -- TR
+                           # always comes from the DICOM header and is never used for plot step
+                           # size/timing, regardless of this value. NOTE: mock_scanner.py also
+                           # reads this same key for its OWN write-pacing (defaults to the
+                           # reference DICOM's real TR when unset) -- setting it here paces both
+                           # scripts together for an end-to-end slowed-down test.
 
 # ---- analysis (registration-free) ----
 fwhm = 5                   # smoothing FWHM (mm)
-roiRadius = 4              # spherical ROI radius (voxels) on each peak
 mapThreshPct = 0.5         # %-signal-change threshold for the per-frame activation overlay
 contrastThresh = 2.0       # GLM map threshold (z units when glmZscore=true)
 driftOrder = 1             # polynomial drift terms in the GLM (per-run)
@@ -45,8 +51,8 @@ glmCondA = "left_hand"     # GLM contrast condA-condB; also used as the display 
 glmCondB = "right_hand"    # set empty ("") to plot the condA beta weight instead
 glmZscore = true           # z-score the GLM map across voxels
 restTypes = []             # trial_types to treat as implicit baseline; [] = auto-detect (rest/fixation/...)
-nSlices = 6                # number of axial slices in the mosaic (used when zCuts is empty)
 zCuts = []                 # fixed axial slice positions in mm, e.g. [-20,-5,10,25,40,55]; [] = auto
+                           # ([] also auto-picks the slice COUNT, fixed at 6 in taskActivation.py)
 baselineFrames = -1        # -1 = auto: use all frames before the first event as baseline
 maskPercentile = 98        # brain mask = ref > maskFraction * p[maskPercentile]
 maskMethod = "bet"          # 'bet' (FSL skull-strip; removes skull/neck) | 'epi' | 'threshold'

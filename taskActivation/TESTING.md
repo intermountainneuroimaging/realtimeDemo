@@ -56,7 +56,7 @@ Docker, no dcm2niix, no real scanner) and confirms:
 - the injected condA/condB activation is recoverable from the written series
 
 ```bash
-python test_mock_scanner.py
+python testing/test_mock_scanner.py
 ```
 
 ## 4. Mock scanner DICOM streaming — the full pipeline, Docker + live path, no real scanner
@@ -83,16 +83,17 @@ full command; in short:
 2. In a **second terminal on the host** (not in the container), run the mock
    scanner pointed at the same folder:
    ```bash
-   python mock_scanner.py --config conf/taskActivation.toml --out $DICOM_DIR
+   python utils/mock_scanner.py --config conf/taskActivation.toml --out $DICOM_DIR
    ```
 
 **What to look for:** the analysis log should show `Data source: dicom |
 volumes: N`, a `Brain mask: ...` line with a coverage percentage roughly in
 the 20–45% range (much lower or higher usually means `maskMethod`/`maskFrac`
 needs adjusting), then process volumes as they arrive from the mock scanner.
-Partway through, open `$OUT_DIR/live/current.png` on the host — you should
-see a real brain (not noise) with a labeled condition in the title. (Skip
-`-v $OUT_DIR:...` and you'll never see these — they're written inside the
+Partway through, open `$OUT_DIR/live/viewer.html` in a browser (auto-refreshes
+every 0.5s) or `$OUT_DIR/live/current.png` directly — you should see a real
+brain (not noise) with a labeled condition and frame number in the title.
+(Skip `-v $OUT_DIR:...` and you'll never see these — they're written inside the
 `--rm` container and vanish when it exits.) Each volume waits up to
 `dicomTimeout` seconds (default 30) before giving up, so a normal startup gap
 won't crash the run — but if you see `RuntimeError: No DICOM for volume N
@@ -100,6 +101,13 @@ arrived within dicomTimeout=...s`, the mock scanner either isn't running yet
 or is writing to a different folder than the container has mounted — start
 it first, or use `--no-delay` to write the whole run up front before
 starting the analysis.
+
+If you use `--no-delay` (or otherwise pre-write the whole `dicomDir`), every
+DICOM already exists before `taskActivation.py` starts, so by default it
+processes and plots them essentially instantly rather than at a live pace.
+Set `demoStep` in the toml (commented out by default) to an artificial
+per-volume delay in seconds for a more realistic-feeling test run — it only
+paces delivery, it never affects TR or timing math.
 
 ## 5. Sanity-checking `dicom_bridge.py` before a real scan
 
@@ -110,7 +118,7 @@ folder of real DICOMs (even ones left over from a prior non-realtime
 session), then inspecting the result:
 
 ```bash
-python dicom_bridge.py --config conf/taskActivation.toml \
+python utils/dicom_bridge.py --config conf/taskActivation.toml \
   --source /path/to/a/folder/of/real/dicoms --dest /tmp/bridge_test --once
 ```
 
@@ -130,7 +138,7 @@ for #4's docker run, but with your real scanner in place of `mock_scanner.py`.
 ## Interpreting failures
 
 The offline tests (`tutorial/test_pipeline.py`, `tutorial/test_generalize.py`,
-`test_mock_scanner.py`) each print one `[PASS]`/`[FAIL]` line per check and a
+`testing/test_mock_scanner.py`) each print one `[PASS]`/`[FAIL]` line per check and a
 final `RESULT: ALL PASS` / `RESULT: SEE FAILURES`, then exit 0/1 accordingly —
 safe to wire into CI or a pre-flight script. The Docker-based check (#4)
 doesn't have a formal pass/fail signal; "it processed every volume without a

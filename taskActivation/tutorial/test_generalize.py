@@ -15,7 +15,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 
 currPath = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(os.path.dirname(currPath))   # taskActivation/ -- for rt_analysis
+sys.path.append(os.path.join(os.path.dirname(currPath), 'utils'))   # taskActivation/utils -- for rt_analysis
 import rt_analysis as mrt
 
 TR = 2.0

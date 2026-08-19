@@ -43,7 +43,7 @@ dicomPath = currPath + '/dicomDir'
 outPath = rootPath + '/outDir'
 os.makedirs(outPath, exist_ok=True)
 sys.path.append(rootPath)
-sys.path.append(currPath)
+sys.path.append(os.path.join(currPath, 'utils'))
 
 import rt_analysis as mrt
 mrt.ensure_nilearn()   # install nilearn on first run if the container lacks it
@@ -57,40 +57,47 @@ from rtCommon.bidsRun import BidsRun
 defaultConfig = os.path.join(currPath, f'conf/{Path(__file__).stem}.toml')
 ap = argparse.ArgumentParser()
 ap.add_argument('--config', '-c', default=defaultConfig, type=str)
-cfg = loadConfigFile(ap.parse_args(None).config)
+ap.add_argument('--run', '-r', default=None, type=int,
+                help="run number to use (overrides the toml's runNum). Only needed when "
+                     "running taskActivation.py directly (e.g. the 'Quick start: direct "
+                     "testing' docker command) rather than through rt-cloud's own "
+                     "run-projectInterface.sh / web interface launcher.")
+args = ap.parse_args(None)
+cfg = loadConfigFile(args.config)
 
 taskName = str(getattr(cfg, 'taskName', getattr(cfg, 'title', 'task')))
+curRun = args.run if args.run is not None else (
+    int(cfg.runNum[0]) if isinstance(cfg.runNum, (list, tuple)) else int(cfg.runNum))
+if args.run is not None:
+    print(f"[run] using run number {curRun} from --run (overrides toml runNum={cfg.runNum})")
 
-# TR ("demoStep"): a fixed number is used as-is (default). Set demoStep = "auto"
-# to infer it from the first real DICOM's RepetitionTime instead of
-# hardcoding it -- useful when pointing at a live scanner or a
-# dicom_bridge.py-fed dicomDir whose protocol TR you don't want to hand-copy
-# into the toml.
-_demoStepRaw = str(getattr(cfg, 'demoStep', '')).strip().lower()
-if _demoStepRaw == 'auto':
-    _autoTimeout = float(getattr(cfg, 'demoStepAutoTimeout', 30.0))
-    _runForPeek = int(cfg.runNum[0]) if isinstance(cfg.runNum, (list, tuple)) else int(cfg.runNum)
-    _peekPattern = stringPartialFormat(cfg.dicomNamePattern, 'RUN', _runForPeek)
-    print(f"[auto-TR] demoStep='auto' -- waiting up to {_autoTimeout:g}s for the first "
-          f"DICOM in {dicomPath} to infer TR (start mock_scanner.py / dicom_bridge.py "
-          "/ the scanner now if it isn't running yet)...")
-    _firstDicom = mrt.wait_for_first_dicom(dicomPath, _peekPattern, _runForPeek, timeout=_autoTimeout)
-    if _firstDicom is None:
-        raise RuntimeError(
-            f"demoStep='auto' but no DICOM matching {_peekPattern!r} appeared in "
-            f"{dicomPath} within {_autoTimeout:g}s. Start the DICOM source first, or "
-            "set demoStep to a fixed number of seconds.")
-    _info = mrt.dicom_header_info(_firstDicom)
-    if 'TR' not in _info:
-        raise RuntimeError(f"demoStep='auto': {_firstDicom} has no RepetitionTime tag; "
-                           "set demoStep to a fixed number of seconds instead.")
-    TR = _info['TR']
-    print(f"[auto-TR] inferred TR={TR:g}s from {os.path.basename(_firstDicom)}")
-else:
-    TR = float(cfg.demoStep)
-hrf_delay = int(cfg.hrf_delay)
+# ---- constants (not deployment-specific -- no need to expose these in the toml) ----
+AUTO_TR_TIMEOUT = 30.0     # seconds to wait for the first real DICOM to infer TR from
+HRF_DELAY_SECONDS = 4.0    # canonical hemodynamic peak lag; hrf_delay (in volumes) = this / TR
+NVOLS_FALLBACK_PADDING = 10  # extra volumes of headroom if nVols has to be estimated from events
+SUBJECT_NUM = 1            # BIDS 'subject' entity tag for the stream/archive (bookkeeping only)
+DEFAULT_N_SLICES = 6       # axial mosaic slice count when zCuts is empty
+
+# TR is always inferred from the first real DICOM's RepetitionTime (rather than
+# hand-copying it into a config) -- correct by construction for whatever
+# scanner/protocol is actually running, no per-site TR to keep in sync.
+_peekPattern = stringPartialFormat(cfg.dicomNamePattern, 'RUN', curRun)
+print(f"[auto-TR] waiting up to {AUTO_TR_TIMEOUT:g}s for the first DICOM in {dicomPath} "
+      "to infer TR (start mock_scanner.py / dicom_bridge.py / the scanner now if it "
+      "isn't running yet)...")
+_firstDicom = mrt.wait_for_first_dicom(dicomPath, _peekPattern, curRun, timeout=AUTO_TR_TIMEOUT)
+if _firstDicom is None:
+    raise RuntimeError(
+        f"No DICOM matching {_peekPattern!r} appeared in {dicomPath} within "
+        f"{AUTO_TR_TIMEOUT:g}s. Start the DICOM source (scanner / dicom_bridge.py / "
+        "mock_scanner.py) first.")
+_info = mrt.dicom_header_info(_firstDicom)
+if 'TR' not in _info:
+    raise RuntimeError(f"{_firstDicom} has no RepetitionTime tag; TR cannot be inferred.")
+TR = _info['TR']
+print(f"[auto-TR] inferred TR={TR:g}s from {os.path.basename(_firstDicom)}")
+hrf_delay = max(1, round(HRF_DELAY_SECONDS / TR))
 fwhm = float(cfg.fwhm)
-roiRadius = float(cfg.roiRadius)
 mapThreshPct = float(getattr(cfg, 'mapThreshPct', 0.5))   # % signal change overlay threshold
 contrastThresh = float(getattr(cfg, 'contrastThresh', 2.0))   # GLM map threshold (z if zscored)
 driftOrder = int(getattr(cfg, 'driftOrder', 1))           # polynomial drift terms in the GLM
@@ -99,7 +106,7 @@ glmCondB = str(getattr(cfg, 'glmCondB', 'right_hand'))    # empty -> plot condA 
 glmZscore = bool(getattr(cfg, 'glmZscore', True))         # z-score the GLM map across voxels
 _rt = list(getattr(cfg, 'restTypes', []) or [])           # explicit rest trial_types; [] = auto-detect
 restTypes = _rt if _rt else None
-nSlices = int(getattr(cfg, 'nSlices', 6))                 # axial mosaic slice count (auto)
+nSlices = DEFAULT_N_SLICES
 zCuts = mrt.parse_float_list(getattr(cfg, 'zCuts', []))   # fixed axial levels in mm; [] = auto
 baselineFramesCfg = int(getattr(cfg, 'baselineFrames', -1))  # -1 = auto (frames before 1st event)
 saveGif = bool(getattr(cfg, 'saveGif', True))             # replay-able activation GIF at end of run
@@ -107,6 +114,14 @@ gifFps = int(getattr(cfg, 'gifFps', 8))                   # GIF playback speed (
 dicomTimeout = float(getattr(cfg, 'dicomTimeout', 30.0))  # seconds to wait per volume before raising
                                                            # -- rtCommon's own default is only 5s, too
                                                            # short for real scanner gaps
+demoStep = float(getattr(cfg, 'demoStep', 0.0))    # TESTING ONLY: artificial delay (s) rtCommon
+                                                    # inserts per volume in getIncremental, e.g. to
+                                                    # pace replay of a dicomDir that's already fully
+                                                    # written (mock_scanner.py --no-delay). 0 (default)
+                                                    # = no artificial delay, deliver as soon as the
+                                                    # DICOM is there. Does NOT affect TR -- TR always
+                                                    # comes from the DICOM header and is never used
+                                                    # for plot step size/timing.
 maskFraction = float(cfg.maskFraction)
 maskPercentile = float(cfg.maskPercentile)
 liveEveryTR = int(cfg.liveEveryTR)
@@ -114,10 +129,12 @@ condAName = glmCondA                       # display label = the condition itsel
 condBName = glmCondB
 liveDir = os.path.join(outPath, str(cfg.liveDirName))
 os.makedirs(liveDir, exist_ok=True)
+viewerPath = mrt.write_live_viewer_html(liveDir)
+print(f"Live viewer: open {viewerPath} in a browser for an auto-refreshing "
+      f"view of current.png + motion.png (updates every 0.5s).")
 eventsPath = os.path.join(currPath, 'study_design', str(cfg.eventsFile))
-curRun = int(cfg.runNum[0]) if isinstance(cfg.runNum, (list, tuple)) else int(cfg.runNum)
 
-print(f"\n----{cfg.title}  [task={taskName}]  A={condAName} B={condBName}----\n")
+print(f"\n----{cfg.title}  [task={taskName}]  A={condAName} B={condBName}  run={curRun}----\n")
 events_rows = mrt.read_events_tsv(eventsPath)
 
 # ---- client interfaces ----
@@ -139,12 +156,18 @@ maskFrac = float(getattr(cfg, 'maskFrac', 0.35))        # BET fractional-intensi
 dicomScanNamePattern = stringPartialFormat(cfg.dicomNamePattern, 'RUN', curRun)
 streamId = bidsInterface.initDicomBidsStream(dicomPath, dicomScanNamePattern,
                                              cfg.minExpectedDicomSize, anonymize=True,
-                                             **{'subject': cfg.subjectNum, 'run': curRun,
+                                             **{'subject': SUBJECT_NUM, 'run': curRun,
                                                 'task': cfg.taskName})
 try:
     nVols = int(bidsInterface.getNumVolumes(streamId))
 except Exception:
-    nVols = int(cfg.fallbackNVols)
+    # the stream couldn't report its own length -- estimate from the events
+    # file itself (whatever task/design is actually loaded) plus headroom
+    lastEventEnd = max(o + d for o, d, _ in events_rows)
+    nVols = int(np.ceil(lastEventEnd / TR)) + NVOLS_FALLBACK_PADDING
+    print(f"[warn] stream did not report its volume count; estimated nVols={nVols} "
+          f"from the events file (last event ends {lastEventEnd:.1f}s) + "
+          f"{NVOLS_FALLBACK_PADDING} volumes headroom.")
 
 print(f"Data source: dicom | volumes: {nVols}")
 # label for the GLM mosaic row, from the configured contrast
@@ -192,8 +215,19 @@ print(f"First event block: '{firstLabel}' {firstOnset:.1f}-{firstOffset:.1f}s "
 
 def fetch_volume(vol):
     """Return a 3D nibabel image for 1-based volume index `vol`, and append it
-    to the BIDS run. Uses the already-resolved `TR` (not raw cfg.demoStep,
-    which is the string "auto" when TR was inferred rather than a number).
+    to the BIDS run.
+
+    Delivery is driven by DICOM arrival, not by TR: `demoStep` (config,
+    default 0) is passed straight through to rtCommon purely as a TESTING
+    knob -- it tells rtCommon to insert that many seconds of artificial
+    per-volume pacing (meant for replaying a dataset that's already fully on
+    disk at a simulated real-time cadence; irrelevant for a real scanner,
+    where initDicomBidsStream is already waiting on the file to actually
+    appear). It never touches TR or anything derived from it -- TR always
+    comes from the DICOM header, and is used only for the event-timing math
+    (GLM design, HRF convolution, hrf_delay), never for plot step size/timing.
+    With demoStep=0 (default), a volume is fetched, analyzed, and plotted the
+    moment its DICOM shows up, whatever the real inter-arrival gap is.
 
     rtCommon's own getIncremental()/getImageData() already poll quietly for
     the file to appear -- but only for 5s by default, which is too short for
@@ -202,7 +236,7 @@ def fetch_volume(vol):
     extends that wait so a normal startup delay doesn't crash the run; it
     only raises once nothing has arrived for that long."""
     try:
-        inc = bidsInterface.getIncremental(streamId, volIdx=vol, demoStep=TR, timeout=dicomTimeout)
+        inc = bidsInterface.getIncremental(streamId, volIdx=vol, demoStep=demoStep, timeout=dicomTimeout)
     except Exception as e:
         raise RuntimeError(
             f"No DICOM for volume {vol} arrived within dicomTimeout={dicomTimeout:g}s. "
@@ -219,15 +253,15 @@ brain_mask_flat = None
 vol_shape = None
 ref3d = None
 affine = None
-baseline_sum = None          # accumulates the first `baselineN` volumes
+pre_baseline_imgs = []       # raw (unmasked) smoothed volumes, buffered until the
+                              # brain mask can be built from their average
 baseline_mean = None         # frozen per-voxel baseline
 fb_sum = None                # accumulates % change over the first event block
 fb_n = 0
 Yglm = None                  # (nVols x nVoxMasked) signal buffer for the incremental GLM
 mask_idx = None              # flat indices of brain voxels
 motion_rows = []             # accumulated mcflirt motion parameters
-roi = None                   # boolean ROI (peak %change voxel from first block)
-roi_peak = None
+roi_peak = None               # ROI = peak %change voxel from the first event block
 roi_trace, glob_trace, cond_trace = [], [], []
 last_center = None
 center = None                # set once a live update has run; guards the final HRF-fit plot
@@ -247,31 +281,9 @@ for vol in range(1, nVols + 1):
     if vol == firstRefVol:
         nib.save(niftiObject, tmpPath + "/funcRef.nii")
         ref_img = nib.load(tmpPath + "/funcRef.nii")
-        ref3d = ref_img.get_fdata(); affine = ref_img.affine; vol_shape = ref3d.shape
-        # ---- brain mask: BET skull-strip -> nilearn EPI -> threshold ----
-        mask_img = tmpPath + "/funcRef.nii"          # the first functional volume
-        brain_mask_flat, mask_method = mrt.make_brain_mask(
-            mask_img, ref3d, affine, vol_shape, method=maskMethod, frac=maskFrac,
-            maskFraction=maskFraction, maskPercentile=maskPercentile, work_dir=tmpPath)
-        frac = 100.0 * brain_mask_flat.mean()
-        print(f"Brain mask: {mask_method} on {os.path.basename(mask_img)} "
-              f"-> {int(brain_mask_flat.sum())} voxels ({frac:.1f}% of FOV)")
-        if frac < 3.0 or frac > 75.0:
-            print("  [warn] mask coverage looks off — inspect outDir/live/brain_mask.nii.gz; "
-                  "try maskMethod='bet'/'epi'/'threshold', or tune maskFrac.")
-        try:
-            nib.save(nib.Nifti1Image(brain_mask_flat.reshape(vol_shape).astype(np.uint8), affine),
-                     os.path.join(liveDir, 'brain_mask.nii.gz'))
-        except Exception:
-            pass
-        # use a brain-extracted reference as the display background (makes the
-        # masking visible; registration still uses the un-masked funcRef.nii)
-        ref3d = (ref3d.flatten() * brain_mask_flat).reshape(vol_shape)
-        mrt.write_reference(liveDir, ref3d, affine)
-        mask_idx = np.where(brain_mask_flat)[0]
-        Yglm = np.zeros((nVols, mask_idx.size), np.float32)   # GLM signal buffer
+        affine = ref_img.affine; vol_shape = ref_img.shape
 
-    # ---- preprocess: motion correct (with motion params) -> smooth -> mask ----
+    # ---- preprocess: motion correct (with motion params) -> smooth ----
     nib.save(niftiObject, tmpPath + "/temp.nii")
     call(f"mcflirt -in {tmpPath}/temp.nii -reffile {tmpPath}/funcRef.nii "
          f"-out {tmpPath}/temp_mc -plots", shell=True)
@@ -281,18 +293,49 @@ for vol in range(1, nVols + 1):
     mrt.write_motion(liveDir, motion_rows, TR=TR)
     mrt.write_motion_png(liveDir, motion_rows, TR=TR)   # always-available motion.png
     call(f'fslmaths {tmpPath}/temp_mc -kernel gauss {fwhm/2.3548} -fmean {tmpPath}/temp_sm', shell=True)
-    img_flat = nib.load(tmpPath + '/temp_sm.nii.gz').get_fdata().astype(np.float32).flatten()
-    if brain_mask_flat is not None:
-        img_flat = img_flat * brain_mask_flat
-    if Yglm is not None:
-        Yglm[vol - 1] = img_flat[mask_idx]          # feed the incremental GLM
+    img_flat_raw = nib.load(tmpPath + '/temp_sm.nii.gz').get_fdata().astype(np.float32).flatten()
 
-    # ---- baseline image from the initial rest frames (before the first event) ----
+    # ---- brain mask: built ONCE, from the AVERAGE of the baseline (pre-task)
+    #      frames -- higher SNR than any single frame, and needs no separate
+    #      sbref scan. Volumes before the mask exists are buffered raw. ----
     if vol <= baselineN:
-        baseline_sum = img_flat.copy() if baseline_sum is None else baseline_sum + img_flat
-        if vol == baselineN:
-            baseline_mean = baseline_sum / baselineN
-            print(f"Baseline image frozen from the first {baselineN} (rest) volumes.")
+        pre_baseline_imgs.append(img_flat_raw)
+    if vol == baselineN:
+        baseline_mean_full = np.mean(pre_baseline_imgs, axis=0)
+        baseline_img_path = tmpPath + "/baselineRef.nii"
+        nib.save(nib.Nifti1Image(baseline_mean_full.reshape(vol_shape).astype(np.float32), affine),
+                 baseline_img_path)
+        # ---- BET skull-strip -> nilearn EPI -> threshold, on the baseline average ----
+        brain_mask_flat, mask_method = mrt.make_brain_mask(
+            baseline_img_path, baseline_mean_full.reshape(vol_shape), affine, vol_shape,
+            method=maskMethod, frac=maskFrac, maskFraction=maskFraction,
+            maskPercentile=maskPercentile, work_dir=tmpPath)
+        frac = 100.0 * brain_mask_flat.mean()
+        print(f"Brain mask: {mask_method} on the {baselineN}-volume baseline average "
+              f"-> {int(brain_mask_flat.sum())} voxels ({frac:.1f}% of FOV)")
+        if frac < 3.0 or frac > 75.0:
+            print("  [warn] mask coverage looks off — inspect outDir/live/brain_mask.nii.gz; "
+                  "try maskMethod='bet'/'epi'/'threshold', or tune maskFrac.")
+        try:
+            nib.save(nib.Nifti1Image(brain_mask_flat.reshape(vol_shape).astype(np.uint8), affine),
+                     os.path.join(liveDir, 'brain_mask.nii.gz'))
+        except Exception:
+            pass
+        # the masked baseline average doubles as the display background (higher
+        # SNR than any single frame; registration still used the un-masked funcRef.nii)
+        ref3d = (baseline_mean_full * brain_mask_flat).reshape(vol_shape)
+        mrt.write_reference(liveDir, ref3d, affine)
+        mask_idx = np.where(brain_mask_flat)[0]
+        Yglm = np.zeros((nVols, mask_idx.size), np.float32)   # GLM signal buffer
+        for i, raw in enumerate(pre_baseline_imgs):
+            Yglm[i] = (raw * brain_mask_flat)[mask_idx]        # backfill the buffered volumes
+        baseline_mean = baseline_mean_full * brain_mask_flat
+        print(f"Baseline image frozen from the first {baselineN} (rest) volumes.")
+
+    if brain_mask_flat is not None:
+        img_flat = img_flat_raw * brain_mask_flat
+        if vol > baselineN:                          # baseline rows already filled above
+            Yglm[vol - 1] = img_flat[mask_idx]        # feed the incremental GLM
 
     # ---- % signal change from baseline ----
     if baseline_mean is not None:
@@ -303,15 +346,13 @@ for vol in range(1, nVols + 1):
         if vol in firstBlockVols:
             fb_sum = psc.copy() if fb_sum is None else fb_sum + psc
             fb_n += 1
-        if roi is None and fb_n > 0 and vol >= lastFirstBlockVol:
+        if roi_peak is None and fb_n > 0 and vol >= lastFirstBlockVol:
             fb_mean = (fb_sum / fb_n).reshape(vol_shape)
             roi_peak = mrt.peak_voxel(fb_mean, brain_mask_flat.reshape(vol_shape))
-            roi = mrt.sphere_roi(vol_shape, roi_peak, roiRadius).flatten() & brain_mask_flat
-            print(f"ROI = peak %change voxel of first '{firstLabel}' block @ {roi_peak} "
-                  f"({int(roi.sum())} voxels)")
+            print(f"ROI = peak %change voxel of first '{firstLabel}' block @ {roi_peak}")
 
-        # data-plot value: mean % signal change in the localized ROI
-        roi_psc = float(psc[roi].mean()) if (roi is not None and roi.sum() > 0) else 0.0
+        # data-plot value: % signal change at the ROI's center (peak) voxel
+        roi_psc = float(psc3d[roi_peak]) if roi_peak is not None else 0.0
         glob_psc = float(psc[brain_mask_flat].max()) if brain_mask_flat.any() else 0.0
     else:
         psc3d = None

@@ -22,10 +22,11 @@ Volume source:
   --source <nifti>     replay a real 4D NIfTI, resampling each volume to the
                        reference DICOM's (rows, cols, nSlices) grid.
 
-Usage (run in a second terminal, alongside the taskActivation run):
-  python mock_scanner.py --config conf/taskActivation.toml            # synthetic
-  python mock_scanner.py --config conf/taskActivation.toml --source bold.nii.gz
-  python mock_scanner.py --config conf/... --no-delay --clean         # fast test
+Usage (run in a second terminal, alongside the taskActivation run, from the
+taskActivation/ project root):
+  python utils/mock_scanner.py --config conf/taskActivation.toml            # synthetic
+  python utils/mock_scanner.py --config conf/taskActivation.toml --source bold.nii.gz
+  python utils/mock_scanner.py --config conf/... --no-delay --clean         # fast test
 -----------------------------------------------------------------------------"""
 import os
 import sys
@@ -36,8 +37,9 @@ import numpy as np
 
 import rt_analysis as mrt
 
-HERE = os.path.dirname(os.path.realpath(__file__))
-DEFAULT_REFERENCE = os.path.join(HERE, 'templates', 'enhanced_bold_template.dcm')
+HERE = os.path.dirname(os.path.realpath(__file__))          # utils/ -- this script's own dir
+PROJECT_ROOT = os.path.dirname(HERE)                         # taskActivation/ -- conf/, dicomDir/, etc.
+DEFAULT_REFERENCE = os.path.join(PROJECT_ROOT, 'templates', 'enhanced_bold_template.dcm')
 
 
 def load_cfg(path):
@@ -151,7 +153,7 @@ def write_dicom(template, vol3d, out_path, instance, run, TR):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Mock DICOM scanner for taskActivation.py's DICOM stream.")
-    ap.add_argument('--config', default=os.path.join(HERE, 'conf', 'taskActivation.toml'))
+    ap.add_argument('--config', default=os.path.join(PROJECT_ROOT, 'conf', 'taskActivation.toml'))
     ap.add_argument('--reference-dicom', default=DEFAULT_REFERENCE,
                     help='real (or template) DICOM to source geometry/TR from; '
                          'default is the bundled anonymized Enhanced multi-frame template')
@@ -201,7 +203,7 @@ def main(argv=None):
     condA = str(cfg.get('glmCondA', 'left_hand'))
     condB = str(cfg.get('glmCondB', 'right_hand'))
     events_file = str(cfg.get('eventsFile', f'{task}_acq-ap_events.tsv'))
-    out_dir = args.out or os.path.join(HERE, 'dicomDir')
+    out_dir = args.out or os.path.join(PROJECT_ROOT, 'dicomDir')
     os.makedirs(out_dir, exist_ok=True)
 
     if args.clean:
@@ -214,7 +216,7 @@ def main(argv=None):
 
     # ---- build the volume series ----
     if args.source == 'synthetic':
-        events = mrt.read_events_tsv(os.path.join(HERE, 'study_design', events_file))
+        events = mrt.read_events_tsv(os.path.join(PROJECT_ROOT, 'study_design', events_file))
         last = max(o + d for o, d, _ in events)
         nVols = args.nvols or int(np.ceil((last + 10) / TR))
         series, _ = synthetic_series(events, nVols, TR, condA, condB, shape)

@@ -8,7 +8,7 @@ latest.txt pointer + a one-time reference.npz), so it can run on another machine
 as long as the live folder is synced.
 
 USAGE:
-    python realtime_display.py /path/to/rt-cloud/outDir/live
+    python utils/realtime_display.py /path/to/rt-cloud/outDir/live   (from taskActivation/)
 
 Overlay: RED = LEFT > RIGHT (right motor cortex), BLUE = RIGHT > LEFT (left
 motor cortex). Labels come from the data.
@@ -28,8 +28,8 @@ from matplotlib.gridspec import GridSpec
 if len(sys.argv) > 1:
     liveDir = sys.argv[1]
 else:
-    here = os.path.dirname(os.path.realpath(__file__))
-    liveDir = os.path.abspath(os.path.join(here, '..', '..', 'outDir', 'live'))
+    here = os.path.dirname(os.path.realpath(__file__))   # utils/
+    liveDir = os.path.abspath(os.path.join(here, '..', '..', '..', 'outDir', 'live'))
 print(f"Watching: {liveDir}")
 POLL_SEC = 0.3
 

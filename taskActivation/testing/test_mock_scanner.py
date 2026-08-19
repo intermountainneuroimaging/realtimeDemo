@@ -18,12 +18,14 @@ import tempfile
 import warnings
 import numpy as np
 
+HERE = os.path.dirname(os.path.realpath(__file__))           # testing/
+PROJECT_ROOT = os.path.dirname(HERE)                          # taskActivation/
+sys.path.append(os.path.join(PROJECT_ROOT, 'utils'))
 import rt_analysis as mrt
 import mock_scanner as mock
 warnings.filterwarnings('ignore')
 
-HERE = os.path.dirname(os.path.realpath(__file__))
-CONFIG = os.path.join(HERE, 'conf', 'taskActivation.toml')
+CONFIG = os.path.join(PROJECT_ROOT, 'conf', 'taskActivation.toml')
 tmp = tempfile.mkdtemp(prefix='mockdcm_')
 
 # run the mock scanner (fast, no delay) using the default synthetic HcpMotor source
@@ -35,7 +37,7 @@ ref_info = mrt.dicom_header_info(mock.DEFAULT_REFERENCE)
 pattern = str(cfg.get('dicomNamePattern', 'demo_{RUN:06d}_{TR:06d}.dcm'))
 run = int(np.ravel(cfg.get('runNum', [1]))[0])
 
-events = mrt.read_events_tsv(os.path.join(HERE, 'study_design', 'HcpMotor_acq-ap_events.tsv'))
+events = mrt.read_events_tsv(os.path.join(PROJECT_ROOT, 'study_design', 'HcpMotor_acq-ap_events.tsv'))
 # build the expected filename per instance directly from the config's naming
 # pattern (not a hardcoded literal, and not a sorted glob() -- dicomNamePattern
 # isn't required to be zero-padded, so alphabetical sort order can't be assumed

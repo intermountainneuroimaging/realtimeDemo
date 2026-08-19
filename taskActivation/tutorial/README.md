@@ -1,8 +1,9 @@
 # Tutorial: offline validation against real HCP task data
 
-This folder validates the analysis in [`../rt_analysis.py`](../rt_analysis.py)
-— the same code `../taskActivation.py` runs live against a scanner — without
-needing a scanner, Docker, or rt-cloud at all. It's useful for two things:
+This folder validates the analysis in
+[`../utils/rt_analysis.py`](../utils/rt_analysis.py) — the same code
+`../taskActivation.py` runs live against a scanner — without needing a
+scanner, Docker, or rt-cloud at all. It's useful for two things:
 
 1. **Proving the pipeline is correct** against known ground truth: real event
    timing from OpenNeuro ds000244, with synthetic (but HRF-realistic)
@@ -38,9 +39,8 @@ for what each check verifies.
 - `test_generalize.py` — generalization test on HcpGambling (reward vs
   punishment vs the `neutral` covariate).
 - `hcp_replay.py` — OpenNeuro-download + local-NIfTI-replay helpers
-  (`ensure_openneuro_bold`, `NiftiReplaySource`, `sbref_path_for`,
-  `mask_from_sbref`). Only used by this folder — the live pipeline streams
-  DICOMs and has no use for them.
+  (`ensure_openneuro_bold`, `NiftiReplaySource`). Only used by this folder —
+  the live pipeline streams DICOMs and has no use for them.
 - `download_data.sh` — prefetch a real BOLD run from OpenNeuro's public S3
   mirror into `openneuro_cache/` (only needed if you want to replay *real*
   downloaded data yourself rather than the synthetic data the tests use).
