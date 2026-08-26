@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd LaunchAgent template for running dicom_bridge.py persistently
+  in the background. See INSTALLATION.md's "macOS (launchd)" section for the
+  full setup walkthrough (Linux uses systemd instead -- see that doc's
+  "Linux (systemd)" section, no plist needed there).
+
+  Copy this file to ~/Library/LaunchAgents/com.rtcloud.dicombridge.plist and
+  replace every /full/path/to/taskActivation, /path/to/real/scanner/drop/folder,
+  /path/to/dicomDir, and /Users/youruser below with your real paths first --
+  launchd will not expand ~ or $HOME inside a plist.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rtcloud.dicombridge</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/full/path/to/taskActivation/utils/dicom_bridge.py</string>
+        <string>--config</string>
+        <string>/full/path/to/taskActivation/conf/taskActivation.toml</string>
+        <string>--source</string>
+        <string>/path/to/real/scanner/drop/folder</string>
+        <string>--dest</string>
+        <string>/path/to/dicomDir</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/full/path/to/taskActivation</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/youruser/Library/Logs/dicom-bridge.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/youruser/Library/Logs/dicom-bridge.log</string>
+</dict>
+</plist>

@@ -70,7 +70,7 @@ docker run -it --rm \
   brainiak/rtcloud:latest projects/taskActivation/tutorial/download_data.sh ds000244 01 03 HcpMotor ap
 ```
 
-## 4. Setting up `dicom_bridge.py` as a background service (systemd)
+## 4. Setting up `dicom_bridge.py` as a background service (systemd / launchd)
 
 Only needed when connecting to a **real** scanner (skip this for the demo
 datasets or `mock_scanner.py` testing). See [README.md](README.md#running-with-live-scanner-data)
@@ -80,10 +80,16 @@ exports rarely produce one directly.
 
 For routine scanning you don't want a terminal open babysitting the bridge.
 It's a lightweight, single-threaded polling loop (a directory listing once a
-second, plus a cheap header-only read per new file), so `systemd` can just run
+second, plus a cheap header-only read per new file), so the OS can just run
 it in the background indefinitely — run it with no `--series`/`--run` (the
 default: bridge everything, `RUN` = each file's own real `SeriesNumber`) so it
 never needs restarting or reconfiguring between scan sessions.
+
+**Linux uses `systemd`; macOS has no `systemd` at all** — its equivalent is
+`launchd`, configured via a plist instead of a unit file and managed with
+`launchctl` instead of `systemctl`. Pick the section for your OS below.
+
+### Linux (systemd)
 
 Create `/etc/systemd/system/dicom-bridge.service` (adjust the paths, and the
 `python3` path if `pydicom`/`numpy` live in a venv or conda env rather than
@@ -137,3 +143,100 @@ startup handshake to wait on, and a plain restart is the right response to a
 transient error (e.g. the source share briefly unavailable). `User=` should be
 whichever account can read the scanner's drop folder and write into the
 `dicomDir` the analysis container has bind-mounted.
+
+### macOS (launchd)
+
+A **LaunchAgent** (runs in your own login session, in `~/Library/LaunchAgents/`)
+is normally the right choice here rather than a LaunchDaemon (runs at boot,
+before anyone logs in) — the scanner's drop folder is usually a network
+share (SMB/AFP) that only gets mounted once you log in, which a LaunchDaemon
+can't see. If your site mounts it at the system level instead (e.g. via
+`/etc/fstab`) and you want the bridge running even with nobody logged in, use
+a LaunchDaemon in `/Library/LaunchDaemons/` instead — same plist, just
+installed as root and loaded in the `system/` domain rather than `gui/<uid>`.
+
+A ready-to-edit template ships at
+[`utils/com.rtcloud.dicombridge.plist`](utils/com.rtcloud.dicombridge.plist)
+— copy it into place and fill in your real paths:
+
+```bash
+cp utils/com.rtcloud.dicombridge.plist ~/Library/LaunchAgents/com.rtcloud.dicombridge.plist
+open ~/Library/LaunchAgents/com.rtcloud.dicombridge.plist   # or any text editor
+```
+
+`ProgramArguments` mirrors the `dicom_bridge.py` command line exactly, one
+argument per array entry — replace every `/full/path/to/taskActivation`,
+`/path/to/real/scanner/drop/folder`, `/path/to/dicomDir`, and
+`/Users/youruser` placeholder with your real paths (launchd won't expand `~`
+or `$HOME` inside a plist, so these all need to be absolute). For reference,
+here's what it contains:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rtcloud.dicombridge</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/full/path/to/taskActivation/utils/dicom_bridge.py</string>
+        <string>--config</string>
+        <string>/full/path/to/taskActivation/conf/taskActivation.toml</string>
+        <string>--source</string>
+        <string>/path/to/real/scanner/drop/folder</string>
+        <string>--dest</string>
+        <string>/path/to/dicomDir</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/full/path/to/taskActivation</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/youruser/Library/Logs/dicom-bridge.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/youruser/Library/Logs/dicom-bridge.log</string>
+</dict>
+</plist>
+```
+
+`RunAtLoad` starts it as soon as the plist is loaded (equivalent to
+systemd's `enable --now`); `KeepAlive`/`SuccessfulExit=false` restarts it if
+it ever exits with an error, but not if it exits cleanly (`dicom_bridge.py`
+without `--once` only exits on a crash or being killed, so in practice this
+behaves like `Restart=on-failure`). Use the real path to your `python3` (a
+venv/conda interpreter if that's where `pydicom`/`numpy` live) — `which
+python3` prints it.
+
+Check it's still well-formed XML after editing, then load and start it:
+
+```bash
+plutil -lint ~/Library/LaunchAgents/com.rtcloud.dicombridge.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.rtcloud.dicombridge.plist
+launchctl enable gui/$(id -u)/com.rtcloud.dicombridge
+```
+
+Useful commands:
+
+```bash
+launchctl print gui/$(id -u)/com.rtcloud.dicombridge          # running? last exit code?
+tail -f ~/Library/Logs/dicom-bridge.log                        # live log
+launchctl kickstart -k gui/$(id -u)/com.rtcloud.dicombridge    # restart the running job
+launchctl bootout gui/$(id -u)/com.rtcloud.dicombridge         # stop + unload
+```
+
+**If you edit the plist file itself** (e.g. changing `--source`/`--dest`),
+`kickstart` alone won't pick it up — it only restarts the already-loaded job
+with its existing config. Reload the plist from disk instead:
+
+```bash
+launchctl bootout gui/$(id -u)/com.rtcloud.dicombridge
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.rtcloud.dicombridge.plist
+launchctl enable gui/$(id -u)/com.rtcloud.dicombridge
+```

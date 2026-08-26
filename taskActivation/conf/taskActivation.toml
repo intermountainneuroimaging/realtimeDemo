@@ -32,15 +32,15 @@ runNum = [1]
 dicomTimeout = 30.0        # seconds to wait for EACH volume's DICOM before raising
                            # (rtCommon's own default is only 5s -- too short for a real
                            # scanner's startup gap or an occasional slow volume)
-# demoStep = 2              # TESTING ONLY, commented out by default (defaults to 0 = no delay if
-                           # unset): artificial per-volume delay (s) passed to rtCommon's
-                           # getIncremental, e.g. to pace replay of a dicomDir that's already
-                           # fully written (mock_scanner.py --no-delay). Does NOT set TR -- TR
-                           # always comes from the DICOM header and is never used for plot step
-                           # size/timing, regardless of this value. NOTE: mock_scanner.py also
-                           # reads this same key for its OWN write-pacing (defaults to the
-                           # reference DICOM's real TR when unset) -- setting it here paces both
-                           # scripts together for an end-to-end slowed-down test.
+demoStep = 0               # TESTING ONLY: artificial per-volume delay (s) passed to rtCommon's
+                           # getIncremental. 0 = no artificial delay (deliver/plot as soon as each
+                           # DICOM is there). Never sets TR -- TR always comes from the DICOM
+                           # header (stamped by the real scanner, or by mock_scanner.py from its
+                           # --tr / reference DICOM) and is never used for plot step size/timing,
+                           # regardless of this value. mock_scanner.py also reads this same key,
+                           # but only for its OWN write-pacing sleep between volumes -- it never
+                           # affects the TR it stamps into the DICOMs it writes. Set this to e.g.
+                           # 2 to pace both scripts like a live TR-paced scan for testing.
 
 # ---- analysis (registration-free) ----
 fwhm = 5                   # smoothing FWHM (mm)

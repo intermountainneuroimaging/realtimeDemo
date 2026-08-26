@@ -184,6 +184,15 @@ _vt = mrt.glm_voxel_traces(Xglm, Yglm, glm_names, mask_idx, shape, TR,
                            ['left_hand', 'right_hand'], events)
 checks['voxel_traces_built'] = (len(_vt) == 2 and all(len(t['measured']) == nVols for t in _vt)
                                 and all(len(t['blocks']) > 0 for t in _vt))
+# re-render the final current.png WITH the peak-voxel trace rows -- mirrors
+# taskActivation.py's own "guaranteed final peak-voxel plot" (see its
+# end-of-run section), so this offline sample looks like a real completed run
+mrt.write_live_update(liveDir, 1, nVols, 'task', psc3d, ref3d, affine, center,
+                      mapThreshPct, roi_tr, glob_tr, cond_tr,
+                      caption='% change from baseline', condLabel=last_condlabel,
+                      contrast3d=last_contrast, contrast_thresh=0.4,
+                      traceALabel=f'ROI ({firstLabel})', traceBLabel='peak',
+                      voxel_traces=_vt)
 checks['voxel_trace_fits_hrf'] = all(
     np.corrcoef(t['measured'], t['predicted'])[0, 1] > 0.8 for t in _vt)
 # motion: par reader + motion.tsv written with all volumes

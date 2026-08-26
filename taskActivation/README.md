@@ -13,7 +13,9 @@ the event timing / GLM contrast a real scanner run needs.
 Data comes from a real (or mock) scanner's DICOM stream — see
 [tutorial/](tutorial/) for an offline, no-scanner-needed way to validate this
 same analysis against real HCP task data (HcpMotor + HcpGambling) before you
-ever point it at a scanner.
+ever point it at a scanner, and [stimuli/](stimuli/) for simple PsychoPy
+scripts that present both tasks to a subject, so the whole thing can be run
+end to end with a real task rather than just a mock/replayed scan.
 
 **Setup:** see **[INSTALLATION.md](INSTALLATION.md)** for one-time setup
 (Docker image, host-side Python deps, prefetching demo data, and installing
@@ -59,6 +61,18 @@ See [TESTING.md](TESTING.md) for how to exercise this with `mock_scanner.py`
 before pointing it at a real scanner; for a real scanner, see
 [Running with live scanner data](#running-with-live-scanner-data) below.
 
+**Fastest path:** `./quickstart.sh` does everything below in one command —
+exports these same variables (sensible defaults, or export your own first to
+override), runs the container, and opens `outDir/live/viewer.html` in your
+browser automatically as soon as it exists. It also has an *optional* section
+for `dicom_bridge.py`/its systemd/launchd background service (see
+[Running with live scanner data](#running-with-live-scanner-data)) — skipped
+by default, since it's only relevant for a real scanner. You'll still see the
+interactive `continue using localfiles?` prompt below in this terminal.
+
+The rest of this section is the same thing spelled out by hand, for anyone
+who wants to see or customize each step individually:
+
 ```bash
 PROJ_NAME=taskActivation
 PROJ_DIR=/full/path/to/taskActivation
@@ -76,7 +90,10 @@ docker run -it --rm \
 `taskActivation.py`), since `PROJ_NAME` is used both as the mount point and as
 the script filename. `DICOM_DIR` needs volumes waiting in it before/while the
 run starts — either a real scanner's export folder (via `dicom_bridge.py`,
-below) or `mock_scanner.py` (see [TESTING.md](TESTING.md)).
+below) or `mock_scanner.py` (see [TESTING.md](TESTING.md)). Once volumes are
+flowing, open `$OUT_DIR/live/viewer.html` in a browser for an auto-refreshing
+view of `current.png`/`motion.png` (this is what `quickstart.sh` opens for
+you automatically).
 
 Running this way (rather than through rt-cloud's own
 `run-projectInterface.sh` / web interface launcher) bypasses whatever sets the
@@ -235,7 +252,9 @@ python utils/realtime_display.py /path/to/rt-cloud/outDir/live
   blocks shaded. These update live too, starting as soon as the incremental
   GLM has enough volumes to be estimable (not just once at the end) — so
   `current.png` gains these rows partway through the run and keeps refitting
-  them every frame after that.
+  them every frame after that. Their x-axis is fixed to the run's whole
+  expected duration (`nVols` × TR) from the start, so it doesn't grow or
+  rescale frame to frame — `motion.png`'s x-axis is fixed the same way.
 
 ### Replaying a whole run (`activation_run<N>.gif`)
 
@@ -266,7 +285,8 @@ taskActivation/
 ├── README.md                 # this file — running + outputs
 ├── INSTALLATION.md           # one-time setup
 ├── TESTING.md                # verifying each component
-├── taskActivation.py         # the ONLY script here: main RT-Cloud analysis
+├── quickstart.sh              # one-command direct-testing run (see Quick start below)
+├── taskActivation.py         # the only PYTHON script here: main RT-Cloud analysis
 │                              # (registration-free, task-agnostic, dicom streaming)
 ├── conf/
 │   └── taskActivation.toml   # HcpMotor config (timing, GLM contrast, display settings)
@@ -278,21 +298,31 @@ taskActivation/
 │   ├── rt_analysis.py             # shared helpers: design-from-events, masks, nilearn plots
 │   ├── mock_scanner.py            # simulate a scanner: stream Enhanced multi-frame DICOMs to dicomDir/
 │   ├── dicom_bridge.py            # bridge a real scanner's raw filenames into rt-cloud's expected pattern
+│   ├── com.rtcloud.dicombridge.plist  # macOS launchd template for running dicom_bridge.py persistently
 │   ├── realtime_display.py        # standalone nilearn/matplotlib viewer (no PsychoPy); run manually
 │   ├── motion_display.py          # standalone head-motion window (also writes motion.png); run manually
 │   └── make_design.py             # (optional) write static design files for inspection
 ├── testing/
 │   └── test_mock_scanner.py   # tests the mock DICOM scanner (frame pack/unpack + recovery)
+├── stimuli/                   # PsychoPy presentation of the two worked-example tasks
+│   ├── README.md                   # install/test PsychoPy, setup, running
+│   ├── common.py                    # shared trigger-wait / event-loop / timing-log helpers
+│   ├── hcp_motor_task.py            # presents the HcpMotor task (left/right hand, foot, tongue)
+│   ├── hcp_gambling_task.py         # presents the HcpGambling task (reward/punishment/neutral)
+│   ├── test_psychopy_install.py     # standalone smoke test for the PsychoPy install itself
+│   └── logs/                        # per-session timing-accuracy logs (gitignored)
 └── tutorial/                  # offline HCP-data validation of this analysis, no scanner needed
     ├── README.md                        # what it is + sample outputs
     ├── test_pipeline.py                 # offline end-to-end test on the REAL HcpMotor timing
     ├── test_generalize.py               # generalization test on HcpGambling (reward/punishment)
+    ├── replay_real_data.py              # runs the real pipeline against an actual downloaded BOLD run
     ├── hcp_replay.py                    # OpenNeuro download + NIfTI replay helpers (tutorial-only)
     ├── download_data.sh                 # prefetch an OpenNeuro demo BOLD run
     ├── conf/taskActivation_gambling.toml  # reference config for the HcpGambling nifti-replay demo
     ├── study_design/HcpGambling_acq-ap_events.tsv
     ├── docs/images/                     # sample current.png outputs
-    └── openneuro_cache/                 # downloaded demo BOLD runs (gitignored)
+    ├── openneuro_cache/                 # downloaded demo BOLD runs (gitignored)
+    └── _real_data_live/                 # replay_real_data.py's output (gitignored)
 ```
 
 ## Per-volume pipeline (registration-free)

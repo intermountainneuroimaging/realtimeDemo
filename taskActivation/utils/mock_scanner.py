@@ -117,10 +117,10 @@ def write_dicom(template, vol3d, out_path, instance, run, TR):
     frame's TemporalPositionIndex) so the file is a faithful one-volume
     Enhanced MR instance, not a re-used copy of the reference volume's frame
     metadata. RepetitionTime is stamped at BOTH the top level and the nested
-    Enhanced-multi-frame location, and to the TR actually used to generate/pace
+    Enhanced-multi-frame location, and to the TR actually used to generate
     this series (not just copied from the reference) -- otherwise every file
     would keep silently claiming the reference DICOM's original TR regardless
-    of --tr/demoStep. The top-level tag matters even though Enhanced MR IOD
+    of --tr. The top-level tag matters even though Enhanced MR IOD
     formally stores it nested: rt-cloud's own getDicomMetadata() (bidsCommon.py)
     only iterates top-level DICOM elements, so RepetitionTime is invisible to
     the live pipeline (MissingMetadataError) unless it's also present there."""
@@ -162,8 +162,8 @@ def main(argv=None):
     ap.add_argument('--out', default=None, help='output dicomDir (default: <cfg>/dicomDir or project dicomDir)')
     ap.add_argument('--run', type=int, default=None, help='run number (default from config runNum)')
     ap.add_argument('--tr', type=float, default=None,
-                    help='seconds between volumes (default: reference DICOM TR, '
-                         'or config demoStep if not "auto")')
+                    help='RepetitionTime (s) to stamp into each DICOM (default: the reference '
+                         "DICOM's own real TR). Independent of demoStep -- see its help below.")
     ap.add_argument('--nvols', type=int, default=None, help='override number of volumes')
     ap.add_argument('--start-index', type=int, default=1, help='first TR file index (project reads 1-based)')
     ap.add_argument('--no-delay', action='store_true', help='write all volumes immediately (for tests)')
@@ -183,17 +183,25 @@ def main(argv=None):
               "-> not a usable multi-frame reference"); return 1
     shape = (ref_info['rows'], ref_info['cols'], ref_info['nFrames'])
 
-    demoStepCfg = str(cfg.get('demoStep', 'auto')).strip().lower()
+    # RepetitionTime stamped into every DICOM: --tr if given, else the reference
+    # DICOM's own real TR. This is what taskActivation.py reads back as TR, so
+    # it must never come from demoStep (see below) -- a demoStep of 0 must not
+    # produce a stamped TR of 0 and break the analysis's TR-derived math.
     if args.tr is not None:
         TR = args.tr
-    elif demoStepCfg != 'auto':
-        TR = float(cfg.get('demoStep'))
     elif 'TR' in ref_info:
         TR = ref_info['TR']
     else:
         TR = 2.0
-        print("[mock][warn] no --tr, no numeric demoStep, and the reference DICOM has "
-              "no RepetitionTime -> falling back to TR=2.0s")
+        print("[mock][warn] no --tr and the reference DICOM has no RepetitionTime "
+              "-> falling back to TR=2.0s")
+
+    # write-pacing delay: real per-volume sleep (skipped entirely by --no-delay).
+    # Defaults to the stamped TR above (so a normal run paces like a live scan),
+    # but demoStep in the toml can override it independently for testing --
+    # it's a pacing knob only, and never changes the stamped TR itself.
+    _demoStepCfg = str(cfg.get('demoStep', '')).strip().lower()
+    writeDelay = float(cfg.get('demoStep')) if _demoStepCfg and _demoStepCfg != 'auto' else TR
 
     run = args.run if args.run is not None else int(np.ravel(cfg.get('runNum', [1]))[0]) \
         if not isinstance(cfg.get('runNum', [1]), str) else 1
@@ -227,6 +235,7 @@ def main(argv=None):
         print(f"[mock] NIfTI replay: {args.source} -> {nVols} vols (resampled to {shape})")
 
     print(f"[mock] writing to {out_dir}  pattern={pattern}  run={run}  TR={TR}s"
+          + (f"  writeDelay={writeDelay}s" if writeDelay != TR else "")
           + ("  (no delay)" if args.no_delay else ""))
     for k in range(nVols):
         idx = args.start_index + k
@@ -238,7 +247,7 @@ def main(argv=None):
             print(f"[mock][warn] {fname} is {sz} B < minExpectedDicomSize {min_size}")
         print(f"[mock] vol {idx:3d}/{nVols}  ->  {fname} ({sz} B)")
         if not args.no_delay and k < nVols - 1:
-            time.sleep(TR)
+            time.sleep(writeDelay)
     print(f"[mock] done: {nVols} DICOMs in {out_dir}")
     return 0
 

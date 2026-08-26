@@ -406,7 +406,7 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
                      peak=None, condAName='A', condBName='B', caption=None, cmap='RdBu_r',
                      contrast3d=None, contrast_thresh=2.0,
                      contrast_label='LEFT vs RIGHT (cumulative)', n_slices=6, z_cuts=None,
-                     voxel_traces=None, frame=None):
+                     voxel_traces=None, frame=None, full_xlim=None):
     """Realtime plot via nilearn.plot_stat_map as a single-row AXIAL MOSAIC.
     Slice positions: `z_cuts` (a list of z-coords in mm) if given, else `n_slices`
     auto-selected levels. Top row = per-frame map; when `contrast3d` is given a
@@ -416,7 +416,10 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
     showing a peak voxel's measured signal vs its HRF-predicted signal.
     `frame` (optional), if given, is stamped in large bold text in the top-left
     corner of the mosaic -- a glance-able frame/volume counter distinct from
-    the smaller caption below the image."""
+    the smaller caption below the image. `full_xlim` (optional (lo, hi) in
+    seconds), if given, fixes the trace rows' x-axis to the whole expected run
+    instead of just the data seen so far, so the axis doesn't grow/rescale
+    frame to frame."""
     try:
         import nibabel as nib
         from nilearn import plotting
@@ -474,9 +477,11 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
     # same X/Y), but each trace's OWN stimulus blocks (axvspan, different onsets
     # per condition) can otherwise pull matplotlib's per-axes autoscale to a
     # different x-range -- lock every trace axes to the same explicit xlim so
-    # the two rows visually line up.
-    t_xlim = None
-    if traces:
+    # the two rows visually line up. `full_xlim`, if given, fixes it to the
+    # whole expected run instead of just the data seen so far (so the axis is
+    # stable frame to frame, not just consistent between the two trace rows).
+    t_xlim = full_xlim
+    if t_xlim is None and traces:
         t_lo = min(float(np.asarray(tr['t']).min()) for tr in traces)
         t_hi = max(float(np.asarray(tr['t']).max()) for tr in traces)
         t_xlim = (t_lo, t_hi)
@@ -584,9 +589,13 @@ def write_live_update(liveDir, run, vol, runLabel, zmap3d, ref3d, affine, peak, 
                       caption=None, traceALabel=None, traceBLabel=None,
                       contrast3d=None, contrast_thresh=2.0, condLabel=None, n_slices=6,
                       z_cuts=None, contrast_label='LEFT vs RIGHT GLM contrast',
-                      voxel_traces=None):
+                      voxel_traces=None, full_xlim=None):
     """Write the per-update bundle (full 3D map for nilearn) + a nilearn PNG, and
-    atomically update the latest.txt pointer."""
+    atomically update the latest.txt pointer. `full_xlim` (optional (lo, hi) in
+    seconds -- typically (0, (nVols-1)*TR)), if given, fixes the trace rows'
+    x-axis to the whole expected run so it doesn't grow/rescale frame to frame;
+    it's persisted in the bundle too so build_activation_gif renders every
+    frame with the same fixed axis."""
     os.makedirs(liveDir, exist_ok=True)
     fn = os.path.join(liveDir, f'live_run{run}_vol{vol:03d}.npz')
     bundle = dict(
@@ -597,6 +606,7 @@ def write_live_update(liveDir, run, vol, runLabel, zmap3d, ref3d, affine, peak, 
         contrast_label=(contrast_label or ''),
         contrast_thresh=float(contrast_thresh), n_slices=int(n_slices),
         z_cuts=np.asarray(z_cuts if z_cuts else [], dtype=np.float32),
+        full_xlim=np.asarray(full_xlim if full_xlim else [], dtype=np.float32),
         affine=np.asarray(affine, np.float32),
         zmap=np.asarray(zmap3d, np.float32),
         A_trace=np.array(A_trace, np.float32), B_trace=np.array(B_trace, np.float32),
@@ -621,7 +631,7 @@ def write_live_update(liveDir, run, vol, runLabel, zmap3d, ref3d, affine, peak, 
                               caption=caption, contrast3d=contrast3d,
                               contrast_thresh=contrast_thresh, n_slices=n_slices,
                               z_cuts=z_cuts, contrast_label=contrast_label,
-                              voxel_traces=voxel_traces, frame=vol)
+                              voxel_traces=voxel_traces, frame=vol, full_xlim=full_xlim)
         if not ok:
             _matplotlib_montage_png(out_png, zmap3d, ref3d, peak, thresh, title,
                                     condAName, condBName, frame=vol)
@@ -675,6 +685,9 @@ def build_activation_gif(liveDir, run, fps=8, out_path=None, verbose=True):
         condLabel = str(b['condLabel']) if b['condLabel'] else ''
         cond_txt = f" | {condLabel}" if condLabel else ""
         title = f"{b['phase']} | run {run} | vol {vol}{cond_txt}"
+        # older bundles (written before full_xlim existed) simply lack the key
+        _fx = b.get('full_xlim')
+        full_xlim = tuple(float(x) for x in _fx) if _fx is not None and np.asarray(_fx).size else None
         frame_png = os.path.join(frame_dir, f'frame_{vol:04d}.png')
         try:
             ok = nilearn_stat_png(
@@ -684,7 +697,7 @@ def build_activation_gif(liveDir, run, fps=8, out_path=None, verbose=True):
                 contrast3d=contrast3d, contrast_thresh=float(b['contrast_thresh']),
                 contrast_label=str(b['contrast_label']), n_slices=int(b['n_slices']),
                 z_cuts=(b['z_cuts'] if b['z_cuts'].size else None), voxel_traces=vtraces,
-                frame=vol)
+                frame=vol, full_xlim=full_xlim)
         except Exception as e:
             ok = False
             if verbose:
@@ -885,14 +898,17 @@ def write_motion(liveDir, motion_rows, TR=2.0):
     os.replace(tmp, p)
 
 
-def write_motion_png(liveDir, motion_rows, TR=2.0, head_radius_mm=50.0, fd_thresh=0.5):
+def write_motion_png(liveDir, motion_rows, TR=2.0, head_radius_mm=50.0, fd_thresh=0.5,
+                     nVols=None):
     """Render the live head-motion plot to outDir/live/motion.png as a SINGLE
     panel -- black background, white text, bold title -- matching current.png's
     look so the two sit well together (e.g. side by side in viewer.html): one
     line per rigid-body parameter (tx,ty,tz,rx,ry,rz, rotations converted to
     mm-equivalent at `head_radius_mm`) plus framewise displacement (FD, Power
     et al.) in bold white on the same axes/timescale. Headless-safe (Agg
-    canvas)."""
+    canvas). `nVols` (optional, the run's expected volume count), if given,
+    fixes the x-axis to the whole expected run (0 to (nVols-1)*TR) instead of
+    just the data seen so far, so the axis doesn't grow/rescale frame to frame."""
     if not motion_rows:
         return False
     try:
@@ -921,7 +937,11 @@ def write_motion_png(liveDir, motion_rows, TR=2.0, head_radius_mm=50.0, fd_thres
     ax.plot(t, fd, color='white', lw=2.0, label='FD')
     ax.axhline(fd_thresh, color='orange', ls='--', lw=0.8, label=f'FD {fd_thresh:g} mm')
     ax.axhline(0, color='gray', lw=0.5)
-    ax.set_xlim(0, max(float(t[-1]), TR) if len(t) else TR)
+    if nVols:
+        xMax = max((nVols - 1) * TR, TR)
+    else:
+        xMax = max(float(t[-1]), TR) if len(t) else TR
+    ax.set_xlim(0, xMax)
     ax.set_xlabel('time (s)', color='white')
     ax.set_ylabel(f'mm (rot @ {head_radius_mm:g} mm)', color='white')
     ax.tick_params(colors='white', labelsize=8)

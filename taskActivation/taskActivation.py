@@ -65,7 +65,19 @@ ap.add_argument('--run', '-r', default=None, type=int,
 args = ap.parse_args(None)
 cfg = loadConfigFile(args.config)
 
-taskName = str(getattr(cfg, 'taskName', getattr(cfg, 'title', 'task')))
+
+def _cfg_opt(key, default, cast=str):
+    """Like getattr(cfg, key, default), but also falls back to `default` when
+    the attribute exists but is None. rt-cloud's own config object can
+    pre-populate some field names it recognizes as standard across projects
+    (e.g. demoStep) as None rather than leaving them absent -- a plain
+    getattr default only kicks in when the attribute is missing entirely, so
+    it doesn't catch that case and cast(None) blows up downstream."""
+    val = getattr(cfg, key, None)
+    return cast(val) if val is not None else default
+
+
+taskName = str(getattr(cfg, 'taskName', None) or getattr(cfg, 'title', None) or 'task')
 curRun = args.run if args.run is not None else (
     int(cfg.runNum[0]) if isinstance(cfg.runNum, (list, tuple)) else int(cfg.runNum))
 if args.run is not None:
@@ -98,30 +110,29 @@ TR = _info['TR']
 print(f"[auto-TR] inferred TR={TR:g}s from {os.path.basename(_firstDicom)}")
 hrf_delay = max(1, round(HRF_DELAY_SECONDS / TR))
 fwhm = float(cfg.fwhm)
-mapThreshPct = float(getattr(cfg, 'mapThreshPct', 0.5))   # % signal change overlay threshold
-contrastThresh = float(getattr(cfg, 'contrastThresh', 2.0))   # GLM map threshold (z if zscored)
-driftOrder = int(getattr(cfg, 'driftOrder', 1))           # polynomial drift terms in the GLM
-glmCondA = str(getattr(cfg, 'glmCondA', 'left_hand'))     # GLM contrast: condA [- condB]
-glmCondB = str(getattr(cfg, 'glmCondB', 'right_hand'))    # empty -> plot condA beta weight only
-glmZscore = bool(getattr(cfg, 'glmZscore', True))         # z-score the GLM map across voxels
-_rt = list(getattr(cfg, 'restTypes', []) or [])           # explicit rest trial_types; [] = auto-detect
+mapThreshPct = _cfg_opt('mapThreshPct', 0.5, float)    # % signal change overlay threshold
+contrastThresh = _cfg_opt('contrastThresh', 2.0, float)  # GLM map threshold (z if zscored)
+driftOrder = _cfg_opt('driftOrder', 1, int)             # polynomial drift terms in the GLM
+glmCondA = _cfg_opt('glmCondA', 'left_hand', str)       # GLM contrast: condA [- condB]
+glmCondB = _cfg_opt('glmCondB', 'right_hand', str)      # empty -> plot condA beta weight only
+glmZscore = _cfg_opt('glmZscore', True, bool)           # z-score the GLM map across voxels
+_rt = _cfg_opt('restTypes', [], list) or []             # explicit rest trial_types; [] = auto-detect
 restTypes = _rt if _rt else None
 nSlices = DEFAULT_N_SLICES
-zCuts = mrt.parse_float_list(getattr(cfg, 'zCuts', []))   # fixed axial levels in mm; [] = auto
-baselineFramesCfg = int(getattr(cfg, 'baselineFrames', -1))  # -1 = auto (frames before 1st event)
-saveGif = bool(getattr(cfg, 'saveGif', True))             # replay-able activation GIF at end of run
-gifFps = int(getattr(cfg, 'gifFps', 8))                   # GIF playback speed (frames/sec)
-dicomTimeout = float(getattr(cfg, 'dicomTimeout', 30.0))  # seconds to wait per volume before raising
-                                                           # -- rtCommon's own default is only 5s, too
-                                                           # short for real scanner gaps
-demoStep = float(getattr(cfg, 'demoStep', 0.0))    # TESTING ONLY: artificial delay (s) rtCommon
-                                                    # inserts per volume in getIncremental, e.g. to
-                                                    # pace replay of a dicomDir that's already fully
-                                                    # written (mock_scanner.py --no-delay). 0 (default)
-                                                    # = no artificial delay, deliver as soon as the
-                                                    # DICOM is there. Does NOT affect TR -- TR always
-                                                    # comes from the DICOM header and is never used
-                                                    # for plot step size/timing.
+zCuts = mrt.parse_float_list(getattr(cfg, 'zCuts', None))  # fixed axial levels in mm; [] = auto
+baselineFramesCfg = _cfg_opt('baselineFrames', -1, int)  # -1 = auto (frames before 1st event)
+saveGif = _cfg_opt('saveGif', True, bool)               # replay-able activation GIF at end of run
+gifFps = _cfg_opt('gifFps', 8, int)                     # GIF playback speed (frames/sec)
+dicomTimeout = _cfg_opt('dicomTimeout', 30.0, float)    # seconds to wait per volume before raising
+                                                         # -- rtCommon's own default is only 5s, too
+                                                         # short for real scanner gaps
+demoStep = _cfg_opt('demoStep', 0.0, float)  # TESTING ONLY: artificial delay (s) rtCommon inserts
+                                              # per volume in getIncremental, e.g. to pace replay of
+                                              # a dicomDir that's already fully written (mock_scanner.py
+                                              # --no-delay). 0 (default) = no artificial delay, deliver
+                                              # as soon as the DICOM is there. Does NOT affect TR -- TR
+                                              # always comes from the DICOM header and is never used
+                                              # for plot step size/timing.
 maskFraction = float(cfg.maskFraction)
 maskPercentile = float(cfg.maskPercentile)
 liveEveryTR = int(cfg.liveEveryTR)
@@ -150,8 +161,8 @@ except Exception:
     pass
 
 # ---- start the DICOM stream ----
-maskMethod = str(getattr(cfg, 'maskMethod', 'bet'))     # 'bet' (skull-strip) | 'epi' | 'threshold'
-maskFrac = float(getattr(cfg, 'maskFrac', 0.35))        # BET fractional-intensity threshold
+maskMethod = _cfg_opt('maskMethod', 'bet', str)   # 'bet' (skull-strip) | 'epi' | 'threshold'
+maskFrac = _cfg_opt('maskFrac', 0.35, float)      # BET fractional-intensity threshold
 
 dicomScanNamePattern = stringPartialFormat(cfg.dicomNamePattern, 'RUN', curRun)
 streamId = bidsInterface.initDicomBidsStream(dicomPath, dicomScanNamePattern,
@@ -170,6 +181,10 @@ except Exception:
           f"{NVOLS_FALLBACK_PADDING} volumes headroom.")
 
 print(f"Data source: dicom | volumes: {nVols}")
+# fixed (0, expected-run-duration) x-axis for the trace/motion plots, so they
+# don't grow/rescale frame to frame -- based on nVols, the expected number of
+# TRs, not however much data has arrived so far.
+fullXlim = (0.0, max((nVols - 1) * TR, TR))
 # label for the GLM mosaic row, from the configured contrast
 _zsfx = ' (z)' if glmZscore else ' (%)'
 if glmCondB:
@@ -243,7 +258,21 @@ def fetch_volume(vol):
             "Is the scanner / dicom_bridge.py / mock_scanner.py actually running and "
             "pointed at this dicomDir? Raise dicomTimeout in the toml if the scanner "
             "just starts slowly.") from e
-    currentBidsRun.appendIncremental(inc)
+    try:
+        currentBidsRun.appendIncremental(inc)
+    except Exception as e:
+        # almost always means dicomDir mixes DICOMs from two different
+        # acquisitions (different slice count/geometry) matching the same
+        # dicomNamePattern/runNum -- typically leftover files from an earlier
+        # test run (a different --reference-dicom, or mock_scanner.py run
+        # without --clean) that never got cleared before this run started.
+        raise RuntimeError(
+            f"Volume {vol}'s DICOM has different geometry than earlier volumes in this "
+            f"run ({e}). dicomDir is likely mixing files from two different acquisitions "
+            "-- check for leftovers from an earlier test (a different mock_scanner.py "
+            "--reference-dicom, or a real scan with a different protocol) matching the "
+            "same dicomNamePattern/runNum, and clear dicomDir (or use mock_scanner.py "
+            "--clean) before starting a fresh run.") from e
     return inc.image
 
 currentBidsRun = BidsRun()
@@ -291,7 +320,7 @@ for vol in range(1, nVols + 1):
     par = mrt.read_mcflirt_par(tmpPath + "/temp_mc.par")
     motion_rows.append([vol] + par)
     mrt.write_motion(liveDir, motion_rows, TR=TR)
-    mrt.write_motion_png(liveDir, motion_rows, TR=TR)   # always-available motion.png
+    mrt.write_motion_png(liveDir, motion_rows, TR=TR, nVols=nVols)   # always-available motion.png
     call(f'fslmaths {tmpPath}/temp_mc -kernel gauss {fwhm/2.3548} -fmean {tmpPath}/temp_sm', shell=True)
     img_flat_raw = nib.load(tmpPath + '/temp_sm.nii.gz').get_fdata().astype(np.float32).flatten()
 
@@ -412,7 +441,7 @@ for vol in range(1, nVols + 1):
             traceALabel=f'ROI ({firstLabel}) %\u0394S', traceBLabel='whole-brain peak %\u0394S',
             contrast3d=contrast3d, contrast_thresh=contrastThresh, condLabel=condLabel,
             n_slices=nSlices, z_cuts=(zCuts or None), contrast_label=glmLabel,
-            voxel_traces=vtraces)
+            voxel_traces=vtraces, full_xlim=fullXlim)
 
 try:
     archive.appendBidsRun(currentBidsRun)
@@ -437,7 +466,7 @@ try:
             traceALabel=f'ROI ({firstLabel}) %\u0394S', traceBLabel='whole-brain peak %\u0394S',
             contrast3d=contrast3d, contrast_thresh=contrastThresh, condLabel=condLabel,
             n_slices=nSlices, z_cuts=(zCuts or None), contrast_label=glmLabel,
-            voxel_traces=vtraces)
+            voxel_traces=vtraces, full_xlim=fullXlim)
         print(f"Final current.png includes peak-voxel HRF fits for: "
               f"{[t['title'].split(' peak')[0] for t in vtraces]}")
     elif vtraces:

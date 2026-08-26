@@ -102,6 +102,15 @@ or is writing to a different folder than the container has mounted — start
 it first, or use `--no-delay` to write the whole run up front before
 starting the analysis.
 
+**Start each fresh test with an empty `dicomDir`.** If you see `RuntimeError:
+Volume N's DICOM has different geometry than earlier volumes in this run`,
+`dicomDir` has DICOMs from two different acquisitions mixed together —
+almost always leftovers from an earlier test (a different `mock_scanner.py
+--reference-dicom`, or a real scan with a different protocol) that matched
+the same `dicomNamePattern`/`runNum` and never got cleared. Pass
+`mock_scanner.py --clean` (removes existing `*.dcm` in the output dir first)
+or clear `$DICOM_DIR` yourself before switching configs.
+
 If you use `--no-delay` (or otherwise pre-write the whole `dicomDir`), every
 DICOM already exists before `taskActivation.py` starts, so by default it
 processes and plots them essentially instantly rather than at a live pace.
