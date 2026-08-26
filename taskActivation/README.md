@@ -169,6 +169,15 @@ how the bridged files actually reach the container. `--dest` isn't required
 but for a real scan you should pass it explicitly so it's unambiguous which
 folder is being fed into the container:
 
+`--source` is searched recursively, so it's fine to point it at a parent
+directory the scanner organizes into per-session subfolders (e.g.
+`<source>/20260812.some_study.some_study/*.dcm`) rather than requiring a
+single flat folder — every `.dcm` anywhere underneath is a candidate, and two
+sessions reusing the same instance filenames (both starting at `IM001.dcm`)
+won't collide, since files are tracked by full path rather than basename.
+Auto-cleanup (below) recurses the same way and removes any per-session
+subfolder it leaves empty.
+
 By default `RUN` in the output filename is each file's own real
 `SeriesNumber` — not a fixed value — so bridging everything in the drop
 folder is collision-safe (an SBRef series and a bold series land in

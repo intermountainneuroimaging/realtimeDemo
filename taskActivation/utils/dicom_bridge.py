@@ -32,6 +32,14 @@ initDicomBidsStream call) strips them on read — the same as a real scanner's
 raw feed would. This script doesn't change that; it's expected, not a new
 exposure introduced here.
 
+--source is searched recursively, so it's fine to point it at a parent
+directory the scanner organizes into per-session subfolders (e.g.
+`<source>/20260812.some_study.some_study/*.dcm`) rather than a single flat
+folder -- every .dcm found at any depth underneath --source is a candidate,
+tracked by its full path (not just its basename) so two sessions that happen
+to reuse the same instance filenames (e.g. both starting at IM001.dcm) never
+collide or get skipped as duplicates of each other.
+
 RUN in the output filename is, by default, each file's own real SeriesNumber
 -- not a fixed value -- so bridging every series present is collision-safe
 (series 2 and series 3 land in dicomDir/ with distinct RUN labels, never the
@@ -48,7 +56,9 @@ session's own files have had their chance to bridge first) and again every
 DICOMs from every past session across days or weeks, and so stale leftovers
 can't mix with a new run's DICOMs the way that caused
 `MetadataMismatchError: ... mismatch in dimensions and pixdim fields` before
-(see TESTING.md). Pass --max-age-hours 0 to disable it.
+(see TESTING.md). Cleanup recurses the same way scanning does, and removes
+any per-session subfolder left empty afterward. Pass --max-age-hours 0 to
+disable it.
 
 --dest cleanup is ON by default (it's this script's own disposable output).
 --source cleanup (the real scanner's own export folder) is OPT-IN only, via
@@ -86,10 +96,14 @@ PROJECT_ROOT = os.path.dirname(HERE)                         # taskActivation/ -
 
 
 def clean_old_files(folder, max_age_hours, label=''):
-    """Delete *.dcm/*.dcm.part files in `folder` whose mtime is older than
-    `max_age_hours`. `max_age_hours <= 0` disables this (no-op). `label` is
-    just for the log line (e.g. 'dest' vs 'source'). Returns the number of
-    files removed.
+    """Delete *.dcm/*.dcm.part files anywhere under `folder` (recursively --
+    --source in particular may have a subfolder per session, e.g.
+    20260812.realtime_test.realtime_test/*.dcm) whose mtime is older than
+    `max_age_hours`, then remove any subfolder that's now empty (so old
+    per-session folders don't pile up forever once their contents have all
+    aged out). `max_age_hours <= 0` disables this (no-op). `label` is just
+    for the log line (e.g. 'dest' vs 'source'). Returns the number of files
+    removed.
 
     Called on BOTH --dest and --source in main() -- --dest is this script's
     own disposable output, safe to age out by default; --source is the real
@@ -99,25 +113,36 @@ def clean_old_files(folder, max_age_hours, label=''):
     if max_age_hours <= 0:
         return 0
     cutoff = time.time() - max_age_hours * 3600
-    try:
-        names = os.listdir(folder)
-    except OSError as e:
-        print(f"[bridge][clean] cannot list {folder}: {e}")
-        return 0
+
+    def _walk_error(e):
+        print(f"[bridge][clean] cannot list {getattr(e, 'filename', folder)}: {e}")
+
     removed = 0
-    for name in names:
-        if not (name.lower().endswith('.dcm') or name.lower().endswith('.dcm.part')):
-            continue
-        path = os.path.join(folder, name)
-        try:
-            if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
-                os.remove(path)
-                removed += 1
-        except OSError:
-            pass   # already gone, or a permissions blip -- next sweep will retry
-    if removed:
+    emptied_dirs = 0
+    # topdown=False so subfolders are visited (and can be found empty) before
+    # their own parent is checked
+    for dirpath, dirnames, filenames in os.walk(folder, topdown=False, onerror=_walk_error):
+        for name in filenames:
+            if not (name.lower().endswith('.dcm') or name.lower().endswith('.dcm.part')):
+                continue
+            path = os.path.join(dirpath, name)
+            try:
+                if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                    os.remove(path)
+                    removed += 1
+            except OSError:
+                pass   # already gone, or a permissions blip -- next sweep will retry
+        if dirpath != folder:   # never remove `folder` itself, only session subfolders under it
+            try:
+                if not os.listdir(dirpath):
+                    os.rmdir(dirpath)
+                    emptied_dirs += 1
+            except OSError:
+                pass   # not actually empty (non-.dcm files present), or a permissions blip
+    if removed or emptied_dirs:
         tag = f" ({label})" if label else ""
-        print(f"[bridge][clean]{tag} removed {removed} file(s) older than {max_age_hours:g}h from {folder}")
+        print(f"[bridge][clean]{tag} removed {removed} file(s) and {emptied_dirs} now-empty "
+              f"folder(s) older than {max_age_hours:g}h from {folder}")
     return removed
 
 
@@ -183,7 +208,10 @@ def main(argv=None):
         if args.source_max_age_hours > 0:
             clean_old_files(args.source, args.source_max_age_hours, label='source')
 
-    seen = set()   # source filenames already bridged (or confirmed not-yet-complete this pass)
+    seen = set()   # source FULL PATHS already bridged (or confirmed not-yet-complete this pass) --
+                   # full path, not just the basename, since --source can have one subfolder per
+                   # session (e.g. 20260812.realtime_test.realtime_test/*.dcm) and different
+                   # sessions can easily reuse the same instance filenames
 
     def settled(path):
         try:
@@ -228,17 +256,25 @@ def main(argv=None):
         return True
 
     def scan_once():
-        try:
-            candidates = sorted(f for f in os.listdir(args.source) if f.lower().endswith('.dcm'))
-        except OSError as e:
-            print(f"[bridge] cannot list {args.source}: {e}")
-            return
-        for fname in candidates:
-            if fname in seen:
+        # os.walk, not os.listdir -- --source may have a subfolder per session
+        # (e.g. 20260812.realtime_test.realtime_test/*.dcm) rather than DICOMs
+        # sitting directly in --source itself; walking finds them at any depth.
+        # onerror is required -- os.walk silently swallows listing errors
+        # otherwise (e.g. --source itself unmounted/unreadable), which would
+        # look identical to "just no new files yet" instead of a real problem.
+        def _walk_error(e):
+            print(f"[bridge] cannot list {getattr(e, 'filename', args.source)}: {e}")
+        candidates = []
+        for dirpath, _dirnames, filenames in os.walk(args.source, onerror=_walk_error):
+            for fname in filenames:
+                if fname.lower().endswith('.dcm'):
+                    candidates.append(os.path.join(dirpath, fname))
+        candidates.sort()
+        for src_path in candidates:
+            if src_path in seen:
                 continue
-            src_path = os.path.join(args.source, fname)
             if bridge_one(src_path):
-                seen.add(fname)
+                seen.add(src_path)
 
     scan_once()
     run_cleanup()   # startup sweep -- catches leftovers from a previous session, after this

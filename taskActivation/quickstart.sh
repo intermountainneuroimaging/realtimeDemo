@@ -41,16 +41,21 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
-# OPTIONAL: dicom_bridge.py / systemd service check -- only relevant when
-# streaming from a REAL scanner (skip entirely for mock_scanner.py testing).
-# Set DICOM_BRIDGE_SOURCE to the scanner's real drop folder to auto-start
-# dicom_bridge.py in the background pointed at $DICOM_DIR; otherwise this
-# just reports whether the systemd service (see INSTALLATION.md) is running,
-# and does nothing if neither applies.
+# OPTIONAL: dicom_bridge.py / systemd (Linux) / launchd (macOS) service check
+# -- only relevant when streaming from a REAL scanner (skip entirely for
+# mock_scanner.py testing). Set DICOM_BRIDGE_SOURCE to the scanner's real
+# drop folder to auto-start dicom_bridge.py in the background pointed at
+# $DICOM_DIR; otherwise this just reports whether a background service (see
+# INSTALLATION.md) is already running, and does nothing if none applies.
 # ---------------------------------------------------------------------------
+LAUNCHD_LABEL="com.rtcloud.dicombridge"
 if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files 2>/dev/null | grep -q '^dicom-bridge\.service'; then
     echo "[dicom_bridge] dicom-bridge.service is installed -- status:"
     systemctl status dicom-bridge.service --no-pager || true
+    echo
+elif command -v launchctl >/dev/null 2>&1 && launchctl print "gui/$(id -u)/$LAUNCHD_LABEL" >/dev/null 2>&1; then
+    echo "[dicom_bridge] $LAUNCHD_LABEL launchd job is loaded -- status:"
+    launchctl print "gui/$(id -u)/$LAUNCHD_LABEL" | grep -E "state|last exit" || true
     echo
 elif [ -n "$DICOM_BRIDGE_SOURCE" ]; then
     echo "[dicom_bridge] starting: --source $DICOM_BRIDGE_SOURCE --dest $DICOM_DIR"
@@ -61,10 +66,10 @@ elif [ -n "$DICOM_BRIDGE_SOURCE" ]; then
     trap '[ -n "$DICOM_BRIDGE_PID" ] && kill "$DICOM_BRIDGE_PID" 2>/dev/null' EXIT
     echo
 else
-    echo "[dicom_bridge] no systemd service found and DICOM_BRIDGE_SOURCE not set --"
+    echo "[dicom_bridge] no systemd/launchd service found and DICOM_BRIDGE_SOURCE not set --"
     echo "               skipping (fine for mock_scanner.py testing). For a real"
-    echo "               scanner: either install the systemd service (see"
-    echo "               INSTALLATION.md#4-setting-up-dicom_bridgepy-as-a-background-service-systemd),"
+    echo "               scanner: either install a background service (see"
+    echo "               INSTALLATION.md#4-setting-up-dicom_bridgepy-as-a-background-service-systemd--launchd),"
     echo "               or set DICOM_BRIDGE_SOURCE=/path/to/scanner/drop/folder"
     echo "               and re-run this script to have it started for you."
     echo
