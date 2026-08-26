@@ -22,6 +22,9 @@ end to end with a real task rather than just a mock/replayed scan.
 `dicom_bridge.py` as a background service).
 **Testing:** see **[TESTING.md](TESTING.md)** to verify each component works
 in isolation before connecting to a real scanner.
+**Before every live session:** see **[PREFLIGHT.md](PREFLIGHT.md)** for the
+short pre-flight checklist (share still up, bridge still running, `dicomDir`
+clean, config matches this session).
 
 This file focuses on the **main way to run the project — against live
 scanner data — and what the outputs actually look like.**
@@ -146,6 +149,16 @@ nested `RepetitionTime` (where Enhanced multi-frame DICOM stores it) has to
 be promoted to the top level, or every volume fails with
 `MissingMetadataError`.
 
+It also auto-cleans `--dest`: files older than `--max-age-hours` (default
+24) are deleted at startup and every `--clean-interval-hours` while running,
+so a long-running background service doesn't quietly accumulate every past
+session's DICOMs — and so old leftovers can't mix with a new session's and
+crash the run the way described in
+[PREFLIGHT.md](PREFLIGHT.md#3-dicomdir-is-empty-or-only-has-files-you-expect).
+`--source` (the scanner's own export) is left alone by default — pass
+`--source-max-age-hours` to also age those out, but that's opt-in since it
+may be the only copy of that data.
+
 **`--source` and `--dest` are two different folders, and both matter:**
 `--source` is the real scanner's raw export location (anywhere readable —
 often a network share). `--dest` is **the same `$DICOM_DIR` you bind-mounted
@@ -187,7 +200,7 @@ python utils/dicom_bridge.py --config conf/taskActivation.toml \
 
 Run this in a second host terminal (it has no `rtCommon` dependency, so it
 doesn't run inside the container) — or install it as a background service so
-you don't have to; see [INSTALLATION.md](INSTALLATION.md#4-setting-up-dicom_bridgepy-as-a-background-service-systemd)
+you don't have to; see [INSTALLATION.md](INSTALLATION.md#4-setting-up-dicom_bridgepy-as-a-background-service-systemd--launchd)
 (the systemd unit example there also shows `--source`/`--dest` set explicitly).
 
 > Real scanner files carry real `PatientName`/`PatientID`/etc. until
@@ -285,6 +298,7 @@ taskActivation/
 ├── README.md                 # this file — running + outputs
 ├── INSTALLATION.md           # one-time setup
 ├── TESTING.md                # verifying each component
+├── PREFLIGHT.md              # short checklist to run before every live session
 ├── quickstart.sh              # one-command direct-testing run (see Quick start below)
 ├── taskActivation.py         # the only PYTHON script here: main RT-Cloud analysis
 │                              # (registration-free, task-agnostic, dicom streaming)

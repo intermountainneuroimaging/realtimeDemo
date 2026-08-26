@@ -40,6 +40,22 @@ force a fixed RUN label instead (e.g. to keep the toml's runNum stable across
 sessions whose real series numbers change); --run requires --series, since
 forcing one RUN value while bridging multiple series would collide.
 
+AUTO-CLEANUP: this also deletes *.dcm/*.dcm.part files older than
+--max-age-hours (default 24) in --dest -- once at startup (after this
+session's own files have had their chance to bridge first) and again every
+--clean-interval-hours while watching, so a long-running background service
+(see INSTALLATION.md's systemd/launchd section) doesn't quietly accumulate
+DICOMs from every past session across days or weeks, and so stale leftovers
+can't mix with a new run's DICOMs the way that caused
+`MetadataMismatchError: ... mismatch in dimensions and pixdim fields` before
+(see TESTING.md). Pass --max-age-hours 0 to disable it.
+
+--dest cleanup is ON by default (it's this script's own disposable output).
+--source cleanup (the real scanner's own export folder) is OPT-IN only, via
+--source-max-age-hours -- that folder may be the only copy of that data, and
+retention there is a site policy decision, not something this script should
+default to doing.
+
 Usage (run from the taskActivation/ project root):
   # bridge every series found; each gets its own RUN = its real SeriesNumber
   python utils/dicom_bridge.py --config conf/taskActivation.toml \\
@@ -52,6 +68,10 @@ Usage (run from the taskActivation/ project root):
   # only series 3, but relabel it as RUN 1 (matches a toml with runNum = [1])
   python utils/dicom_bridge.py --config conf/taskActivation.toml \\
       --source /Volumes/sambashare/some_session --series 3 --run 1
+
+  # also clean the scanner's own export folder (opt-in -- see AUTO-CLEANUP above)
+  python utils/dicom_bridge.py --config conf/taskActivation.toml \\
+      --source /Volumes/sambashare/some_session --source-max-age-hours 72
 -----------------------------------------------------------------------------"""
 import os
 import sys
@@ -63,6 +83,42 @@ import rt_analysis as mrt
 
 HERE = os.path.dirname(os.path.realpath(__file__))          # utils/ -- this script's own dir
 PROJECT_ROOT = os.path.dirname(HERE)                         # taskActivation/ -- conf/, dicomDir/
+
+
+def clean_old_files(folder, max_age_hours, label=''):
+    """Delete *.dcm/*.dcm.part files in `folder` whose mtime is older than
+    `max_age_hours`. `max_age_hours <= 0` disables this (no-op). `label` is
+    just for the log line (e.g. 'dest' vs 'source'). Returns the number of
+    files removed.
+
+    Called on BOTH --dest and --source in main() -- --dest is this script's
+    own disposable output, safe to age out by default; --source is the real
+    scanner's own export and may be the only copy of that data, so its
+    cleanup is opt-in only (see --source-max-age-hours) rather than sharing
+    --dest's default."""
+    if max_age_hours <= 0:
+        return 0
+    cutoff = time.time() - max_age_hours * 3600
+    try:
+        names = os.listdir(folder)
+    except OSError as e:
+        print(f"[bridge][clean] cannot list {folder}: {e}")
+        return 0
+    removed = 0
+    for name in names:
+        if not (name.lower().endswith('.dcm') or name.lower().endswith('.dcm.part')):
+            continue
+        path = os.path.join(folder, name)
+        try:
+            if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                removed += 1
+        except OSError:
+            pass   # already gone, or a permissions blip -- next sweep will retry
+    if removed:
+        tag = f" ({label})" if label else ""
+        print(f"[bridge][clean]{tag} removed {removed} file(s) older than {max_age_hours:g}h from {folder}")
+    return removed
 
 
 def main(argv=None):
@@ -82,6 +138,18 @@ def main(argv=None):
     ap.add_argument('--settle-secs', type=float, default=0.5,
                     help='wait this long and re-check file size before treating a file as fully written')
     ap.add_argument('--once', action='store_true', help='bridge whatever matches now, then exit (no watching)')
+    ap.add_argument('--max-age-hours', type=float, default=24.0,
+                    help='delete *.dcm/*.dcm.part files in --dest older than this (0 disables). '
+                         'Runs once at startup and again every --clean-interval-hours while '
+                         'watching.')
+    ap.add_argument('--source-max-age-hours', type=float, default=0.0,
+                    help="ALSO delete *.dcm files older than this in --source, the real scanner's "
+                         'own export folder (0/default: disabled -- opt in explicitly, since unlike '
+                         '--dest this may be the only copy of that data and some sites need to '
+                         'retain it under their own policy regardless of what this script does).')
+    ap.add_argument('--clean-interval-hours', type=float, default=1.0,
+                    help='how often to re-run the age sweep(s) while watching (ignored with '
+                         '--once, and if both age options are 0)')
     args = ap.parse_args(argv)
 
     if args.run is not None and args.series is None:
@@ -103,6 +171,17 @@ def main(argv=None):
     run_desc = f"RUN forced to {args.run}" if args.run is not None else "RUN = each file's own SeriesNumber"
     print(f"[bridge] watching {args.source}  {series_desc}  -> {dest_dir}  "
           f"pattern={pattern}  {run_desc}" + ("  (one-shot)" if args.once else ""))
+    if args.source_max_age_hours > 0:
+        print(f"[bridge][clean] auto-cleanup ENABLED for --source too "
+              f"(>{args.source_max_age_hours:g}h) -- this deletes real scanner DICOMs, "
+              "not just bridged copies")
+
+    def run_cleanup():
+        # dest first, then source -- bridging always gets first crack at a file (scan_once()
+        # runs before every call to this, see below) before source cleanup could ever delete it
+        clean_old_files(dest_dir, args.max_age_hours, label='dest')
+        if args.source_max_age_hours > 0:
+            clean_old_files(args.source, args.source_max_age_hours, label='source')
 
     seen = set()   # source filenames already bridged (or confirmed not-yet-complete this pass)
 
@@ -162,14 +241,20 @@ def main(argv=None):
                 seen.add(fname)
 
     scan_once()
+    run_cleanup()   # startup sweep -- catches leftovers from a previous session, after this
+                    # session's own files have had their chance to bridge first
     if args.once:
         print(f"[bridge] done (one-shot): {len(seen)} files bridged/skipped")
         return 0
 
+    last_clean = time.time()
     try:
         while True:
             time.sleep(args.poll_interval)
             scan_once()
+            if time.time() - last_clean >= args.clean_interval_hours * 3600:
+                run_cleanup()
+                last_clean = time.time()
     except KeyboardInterrupt:
         print(f"\n[bridge] stopped: {len(seen)} files bridged/skipped")
     return 0
