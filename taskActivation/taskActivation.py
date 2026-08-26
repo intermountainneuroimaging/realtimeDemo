@@ -36,6 +36,18 @@ import pdb
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=UserWarning)
 
+# rt-cloud's ClientInterface() (below) keeps its connection to the project
+# server alive on a background thread that is never marked daemon, so the
+# interpreter -- and therefore this container -- hangs forever after any
+# uncaught exception (e.g. a dicomTimeout) instead of exiting: sys.exit()/an
+# unhandled exception only tears down the main thread, and Python won't
+# actually quit until every non-daemon thread finishes on its own. Forcing a
+# hard os._exit() after printing the traceback bypasses that wait.
+def _exit_hard_on_error(exc_type, exc_value, exc_tb):
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+    os._exit(1)
+sys.excepthook = _exit_hard_on_error
+
 tmpPath = tempfile.gettempdir()
 currPath = os.path.dirname(os.path.realpath(__file__))
 rootPath = os.path.dirname(os.path.dirname(currPath))
@@ -491,4 +503,7 @@ print(f"\n{taskName} complete. Realtime % signal-change plots + final peak-voxel
       f"brain maps via realtime_display.py).")
 
 print("-----------------------------------------------------------------------")
-sys.exit(0)
+# os._exit(), not sys.exit() -- see the excepthook note near the top of this
+# file: rt-cloud's background connection thread would otherwise keep the
+# container running after a normal, successful completion too.
+os._exit(0)
