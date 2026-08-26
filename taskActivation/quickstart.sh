@@ -13,10 +13,11 @@
 # a sibling outDir/), but you can override any of them by exporting first:
 #   DICOM_DIR=/path/to/real/dicomDir OUT_DIR=/path/to/outDir ./quickstart.sh
 #
-# You'll still see rt-cloud's own interactive prompt in this terminal:
+# rt-cloud's own startup prompt --
 #   Unable to connect to projectServer, continue using localfiles? (y/n):
-# answer y -- that's expected for this direct-testing pattern (no web
-# interface). See README.md if you'd rather use the full web dashboard.
+# -- is answered 'y' automatically below (expected for this direct-testing
+# pattern; no web interface). See README.md if you'd rather use the full web
+# dashboard, or to see this prompt answered by hand instead.
 set -e
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -89,8 +90,13 @@ fi
     done
 ) &
 
-# ---- 3. run the analysis container (interactive -- answer 'y' at the prompt above) ----
-docker run -it --rm \
+# ---- 3. run the analysis container, auto-answering rt-cloud's 'continue
+#         using localfiles?' startup prompt with 'y' so this can run
+#         unattended -- no -t (no pseudo-tty needed once stdin is piped, and
+#         PYTHONUNBUFFERED keeps the per-volume log lines streaming live
+#         instead of batching up) ----
+yes y | docker run -i --rm \
+    -e PYTHONUNBUFFERED=1 \
     -v "$PROJ_DIR":/rt-cloud/projects/"$PROJ_NAME" \
     -v "$DICOM_DIR":/rt-cloud/projects/"$PROJ_NAME"/dicomDir \
     -v "$OUT_DIR":/rt-cloud/outDir \

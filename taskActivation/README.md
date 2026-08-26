@@ -70,8 +70,9 @@ override), runs the container, and opens `outDir/live/viewer.html` in your
 browser automatically as soon as it exists. It also has an *optional* section
 for `dicom_bridge.py`/its systemd/launchd background service (see
 [Running with live scanner data](#running-with-live-scanner-data)) — skipped
-by default, since it's only relevant for a real scanner. You'll still see the
-interactive `continue using localfiles?` prompt below in this terminal.
+by default, since it's only relevant for a real scanner. It also auto-answers
+the `continue using localfiles?` prompt below, so the whole thing runs
+unattended.
 
 The rest of this section is the same thing spelled out by hand, for anyone
 who wants to see or customize each step individually:
