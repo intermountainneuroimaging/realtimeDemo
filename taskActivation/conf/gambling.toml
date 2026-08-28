@@ -1,0 +1,83 @@
+##### Configuration file: gambling (reward/WIN vs punishment/LOSS) #####
+#
+# Real-time, registration-free reward-processing mapping, streaming DICOMs
+# from a real (or mock) scanner via dicomDir/. Uses the ds000244 (Individual
+# Brain Charting) "HcpGambling" task design as its event timing/GLM
+# template. Pairs with stimuli_ptb/gambling_task.m (Psychtoolbox) or the
+# PsychoPy stimuli/hcp_gambling_task.py.
+#
+# Run: python run_task.py gambling   (see ../run_task.py / ../quickstart.sh gambling)
+
+title = "Real-Time fMRI Task Activation (gambling WIN vs LOSS)"
+
+# ---- generic real-time task-activation demo ----
+
+taskName = "HcpGambling"
+
+# events file (shipped) used to build the per-volume design at runtime.
+eventsFile = "HcpGambling_acq-ap_events.tsv"
+
+# condition display names. cond A = reward (WIN), cond B = punishment (LOSS).
+# 'neutral' trials become their own GLM covariate automatically (see
+# classify_conditions() in utils/rt_analysis.py) -- not treated as rest and
+# not part of this contrast, exactly matching the HCP task's own design.
+#
+# Not configured here (fixed in taskActivation.py -- not deployment-specific):
+# TR is always inferred from the first real DICOM's RepetitionTime; hrf_delay
+# is derived from that TR; nVols falls back to an events-file estimate if the
+# stream can't report its own length; the BIDS 'subject' tag is bookkeeping
+# only. See the AUTO_TR_TIMEOUT / HRF_DELAY_SECONDS / NVOLS_FALLBACK_PADDING /
+# SUBJECT_NUM constants near the top of taskActivation.py.
+
+# ---- scanner (DICOM) streaming ----
+dicomNamePattern = "demo_{RUN:06d}_{TR:06d}.dcm"   # demo_SeriesNumber_InstanceNumber (zero-padded)
+minExpectedDicomSize = 300000
+runNum = [1]
+dicomTimeout = 30.0        # seconds to wait for EACH volume's DICOM before raising
+                           # (rtCommon's own default is only 5s -- too short for a real
+                           # scanner's startup gap or an occasional slow volume)
+demoStep = 0               # TESTING ONLY: artificial per-volume delay (s) passed to rtCommon's
+                           # getIncremental. 0 = no artificial delay (deliver/plot as soon as each
+                           # DICOM is there). Never sets TR -- TR always comes from the DICOM
+                           # header (stamped by the real scanner, or by mock_scanner.py from its
+                           # --tr / reference DICOM) and is never used for plot step size/timing,
+                           # regardless of this value. mock_scanner.py also reads this same key,
+                           # but only for its OWN write-pacing sleep between volumes -- it never
+                           # affects the TR it stamps into the DICOMs it writes. Set this to e.g.
+                           # 2 to pace both scripts like a live TR-paced scan for testing.
+
+# ---- analysis (registration-free) ----
+fwhm = 5                   # smoothing FWHM (mm)
+mapThreshPct = 0.5         # %-signal-change threshold for the per-frame activation overlay
+contrastThresh = 2.0       # GLM map threshold (z units when glmZscore=true)
+driftOrder = 1             # polynomial drift terms in the GLM (per-run)
+glmCondA = "reward"        # GLM contrast condA-condB (WIN); also used as the display label
+glmCondB = "punishment"    # (LOSS); set empty ("") to plot the condA beta weight instead
+glmZscore = true           # z-score the GLM map across voxels
+restTypes = []             # trial_types to treat as implicit baseline; [] = auto-detect (rest/fixation/...)
+zCuts = []                 # fixed axial slice positions in mm, e.g. [-20,-5,10,25,40,55]; [] = auto
+                           # ([] also auto-picks the slice COUNT, fixed at 6 in taskActivation.py)
+baselineFrames = -1        # -1 = auto: use all frames before the first event as baseline
+maskPercentile = 98        # brain mask = ref > maskFraction * p[maskPercentile]
+maskMethod = "bet"          # 'bet' (FSL skull-strip; removes skull/neck) | 'epi' | 'threshold'
+maskFrac = 0.35             # BET fractional-intensity threshold (lower = larger brain)
+maskFraction = 0.12
+
+# ---- realtime display ----
+liveEveryTR = 1            # write a live update every N volumes
+liveDirName = "live"       # subfolder of rt-cloud/outDir/ the viewer watches
+saveGif = true             # at end of run, assemble every saved frame into a
+                           # replay-able outDir/live/activation_run<N>.gif
+gifFps = 8                 # GIF playback speed (frames/sec)
+
+# ---- web Data Plots tab (WIN-ROI %SC minus LOSS-ROI %SC) ----
+plotTitle = 'Reward processing (WIN-ROI minus LOSS-ROI, % signal change)'
+plotXLabel = 'volume #'
+plotYLabel = 'WIN - LOSS % signal change'
+plotXRangeLow = 0
+plotXRangeHigh = 180       # rough (~345s design / ~TR=2s); the analysis itself uses the
+                           # real inferred TR regardless -- this only sizes the web widget
+plotYRangeLow = -2
+plotYRangeHigh = 2
+plotAutoRangeX = false
+plotAutoRangeY = true

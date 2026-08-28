@@ -23,7 +23,7 @@ happened, by construction.
 | Script | Events file | Conditions |
 |---|---|---|
 | `hcp_motor_task.py` | `../study_design/HcpMotor_acq-ap_events.tsv` | left/right hand, left/right foot, tongue (each with a brief get-ready cue) |
-| `hcp_gambling_task.py` | `../tutorial/study_design/HcpGambling_acq-ap_events.tsv` | reward, punishment, neutral (card-guess + feedback) |
+| `hcp_gambling_task.py` | `../study_design/HcpGambling_acq-ap_events.tsv` | reward, punishment, neutral (card-guess + feedback) |
 
 ## Install and test PsychoPy
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """-----------------------------------------------------------------------------
 hcp_gambling_task.py -- simple PsychoPy presentation of the HcpGambling task
-(ds000244 timing, the same tutorial/study_design/HcpGambling_acq-ap_events.tsv
-the tutorial/ offline validation uses), so this project's second worked
-example (reward vs punishment, neutral as a covariate) can also be run with
-a real task on the stimulus computer.
+(ds000244 timing, the same study_design/HcpGambling_acq-ap_events.tsv
+taskActivation.py's live pipeline reads via conf/gambling.toml -- also a copy
+of the one tutorial/'s offline validation uses), so this project's second
+worked example (reward vs punishment, neutral as a covariate) can also be
+run with a real task on the stimulus computer.
 
 Each trial: the subject briefly guesses whether a hidden card is higher or
 lower (any button press -- as in the real HCP task, the guess doesn't
@@ -25,7 +26,7 @@ import datetime
 import common
 
 HERE = os.path.dirname(os.path.realpath(__file__))
-DEFAULT_EVENTS = os.path.join(common.PROJECT_ROOT, 'tutorial', 'study_design',
+DEFAULT_EVENTS = os.path.join(common.PROJECT_ROOT, 'study_design',
                               'HcpGambling_acq-ap_events.tsv')
 
 OUTCOME_STYLE = {

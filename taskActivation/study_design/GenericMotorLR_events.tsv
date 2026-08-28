@@ -1,0 +1,14 @@
+onset	duration	trial_type
+0	30	rest
+30	30	left_finger
+60	30	rest
+90	30	right_finger
+120	30	rest
+150	30	left_finger
+180	30	rest
+210	30	right_finger
+240	30	rest
+270	30	left_finger
+300	30	rest
+330	30	right_finger
+360	30	rest

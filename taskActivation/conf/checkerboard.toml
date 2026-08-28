@@ -1,0 +1,89 @@
+##### Configuration file: checkerboard (flickering-checkerboard ON vs OFF) #####
+#
+# Real-time, registration-free visual localizer, streaming DICOMs from a
+# real (or mock) scanner via dicomDir/. Pairs with
+# stimuli_ptb/checkerboard_task.m (Psychtoolbox) or
+# study_design/Checkerboard_events.tsv presented by any other means: 20s
+# ON/OFF blocks of a flickering full-contrast checkerboard vs fixation (6
+# reps + a trailing rest block, 260s total).
+#
+# Run: python run_task.py checkerboard   (see ../run_task.py / ../quickstart.sh checkerboard)
+
+title = "Real-Time fMRI Task Activation (checkerboard ON vs OFF)"
+
+# ---- generic real-time task-activation demo ----
+
+taskName = "Checkerboard"
+
+# events file (shipped) used to build the per-volume design at runtime.
+eventsFile = "Checkerboard_events.tsv"
+
+# ON vs OFF: glmCondB is deliberately empty here. "OFF" in this design is
+# the 'rest' trial_type, which is auto-detected as the GLM's IMPLICIT
+# baseline (see is_rest_type() in utils/rt_analysis.py) rather than a named
+# regressor of its own -- so it can't be passed as glmCondB directly. With
+# glmCondB empty, taskActivation.py plots the glmCondA beta weight instead
+# of a condA-condB contrast (see taskActivation.py's glmCondB comment) --
+# which for a two-condition ON/rest design like this one IS exactly the ON
+# vs OFF contrast: activation during checkerboard blocks relative to the
+# implicit rest/OFF baseline in the same GLM.
+#
+# Not configured here (fixed in taskActivation.py -- not deployment-specific):
+# TR is always inferred from the first real DICOM's RepetitionTime; hrf_delay
+# is derived from that TR; nVols falls back to an events-file estimate if the
+# stream can't report its own length; the BIDS 'subject' tag is bookkeeping
+# only. See the AUTO_TR_TIMEOUT / HRF_DELAY_SECONDS / NVOLS_FALLBACK_PADDING /
+# SUBJECT_NUM constants near the top of taskActivation.py.
+
+# ---- scanner (DICOM) streaming ----
+dicomNamePattern = "demo_{RUN:06d}_{TR:06d}.dcm"   # demo_SeriesNumber_InstanceNumber (zero-padded)
+minExpectedDicomSize = 300000
+runNum = [1]
+dicomTimeout = 30.0        # seconds to wait for EACH volume's DICOM before raising
+                           # (rtCommon's own default is only 5s -- too short for a real
+                           # scanner's startup gap or an occasional slow volume)
+demoStep = 0               # TESTING ONLY: artificial per-volume delay (s) passed to rtCommon's
+                           # getIncremental. 0 = no artificial delay (deliver/plot as soon as each
+                           # DICOM is there). Never sets TR -- TR always comes from the DICOM
+                           # header (stamped by the real scanner, or by mock_scanner.py from its
+                           # --tr / reference DICOM) and is never used for plot step size/timing,
+                           # regardless of this value. mock_scanner.py also reads this same key,
+                           # but only for its OWN write-pacing sleep between volumes -- it never
+                           # affects the TR it stamps into the DICOMs it writes. Set this to e.g.
+                           # 2 to pace both scripts like a live TR-paced scan for testing.
+
+# ---- analysis (registration-free) ----
+fwhm = 5                   # smoothing FWHM (mm)
+mapThreshPct = 0.5         # %-signal-change threshold for the per-frame activation overlay
+contrastThresh = 2.0       # GLM map threshold (z units when glmZscore=true)
+driftOrder = 1             # polynomial drift terms in the GLM (per-run)
+glmCondA = "checkerboard"  # GLM condA beta weight (ON vs implicit rest/OFF baseline)
+glmCondB = ""              # empty -- see the ON-vs-OFF note above
+glmZscore = true           # z-score the GLM map across voxels
+restTypes = []             # trial_types to treat as implicit baseline; [] = auto-detect (rest/fixation/...)
+zCuts = []                 # fixed axial slice positions in mm, e.g. [-20,-5,10,25,40,55]; [] = auto
+                           # ([] also auto-picks the slice COUNT, fixed at 6 in taskActivation.py)
+baselineFrames = -1        # -1 = auto: use all frames before the first event as baseline
+maskPercentile = 98        # brain mask = ref > maskFraction * p[maskPercentile]
+maskMethod = "bet"          # 'bet' (FSL skull-strip; removes skull/neck) | 'epi' | 'threshold'
+maskFrac = 0.35             # BET fractional-intensity threshold (lower = larger brain)
+maskFraction = 0.12
+
+# ---- realtime display ----
+liveEveryTR = 1            # write a live update every N volumes
+liveDirName = "live"       # subfolder of rt-cloud/outDir/ the viewer watches
+saveGif = true             # at end of run, assemble every saved frame into a
+                           # replay-able outDir/live/activation_run<N>.gif
+gifFps = 8                 # GIF playback speed (frames/sec)
+
+# ---- web Data Plots tab (ROI %SC, single condition -- no A-minus-B here) ----
+plotTitle = 'Checkerboard ON response (ROI % signal change)'
+plotXLabel = 'volume #'
+plotYLabel = 'ROI % signal change'
+plotXRangeLow = 0
+plotXRangeHigh = 140       # rough (260s design / ~TR=2s); the analysis itself uses the
+                           # real inferred TR regardless -- this only sizes the web widget
+plotYRangeLow = -2
+plotYRangeHigh = 4
+plotAutoRangeX = false
+plotAutoRangeY = true

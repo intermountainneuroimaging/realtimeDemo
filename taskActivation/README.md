@@ -13,9 +13,12 @@ the event timing / GLM contrast a real scanner run needs.
 Data comes from a real (or mock) scanner's DICOM stream — see
 [tutorial/](tutorial/) for an offline, no-scanner-needed way to validate this
 same analysis against real HCP task data (HcpMotor + HcpGambling) before you
-ever point it at a scanner, and [stimuli/](stimuli/) for simple PsychoPy
-scripts that present both tasks to a subject, so the whole thing can be run
-end to end with a real task rather than just a mock/replayed scan.
+ever point it at a scanner, and [stimuli/](stimuli/) (PsychoPy) or
+[stimuli_ptb/](stimuli_ptb/) (Psychtoolbox/MATLAB) for simple task-presentation
+scripts, so the whole thing can be run end to end with a real task rather than
+just a mock/replayed scan. Three tasks are ready to go out of the box — see
+[Quick start](#quick-start-direct-testing-no-web-interface) below for
+`motor`/`checkerboard`/`gambling`.
 
 **Setup:** see **[INSTALLATION.md](INSTALLATION.md)** for one-time setup
 (Docker image, host-side Python deps, prefetching demo data, and installing
@@ -73,6 +76,37 @@ for `dicom_bridge.py`/its systemd/launchd background service (see
 by default, since it's only relevant for a real scanner. It also auto-answers
 the `continue using localfiles?` prompt below, so the whole thing runs
 unattended.
+
+**Three ready-made tasks, one command each:** pass a task name to
+`quickstart.sh` (or to `run_task.py` directly — see below) to run that task's
+own `conf/*.toml` instead of the default:
+
+```bash
+./quickstart.sh motor          # LEFT vs RIGHT finger tapping
+./quickstart.sh checkerboard   # flickering checkerboard ON vs OFF
+./quickstart.sh gambling       # gambling WIN (reward) vs LOSS (punishment)
+```
+
+| Task | `conf/*.toml` | `eventsFile` | `glmCondA` vs `glmCondB` | Present it with |
+|---|---|---|---|---|
+| Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_finger` vs `right_finger` | `stimuli_ptb/motor_task.m` |
+| Checkerboard | `checkerboard.toml` | `Checkerboard_events.tsv` | `checkerboard` vs *(empty — beta map, i.e. vs the implicit rest/OFF baseline)* | `stimuli_ptb/checkerboard_task.m` |
+| Gambling | `gambling.toml` | `HcpGambling_acq-ap_events.tsv` | `reward` vs `punishment` | `stimuli_ptb/gambling_task.m` |
+
+`run_task.py` is the thing actually doing the selection (`quickstart.sh
+<task>` just forwards to it inside the container) — it's a thin wrapper
+around `taskActivation.py --config conf/<task>.toml`, so running it directly
+(e.g. for the [direct-testing command](#quick-start-direct-testing-no-web-interface)
+below, or inside `scripts/run-projectInterface.sh`) works identically:
+
+```bash
+python projects/$PROJ_NAME/run_task.py motor          # instead of $PROJ_NAME.py
+python projects/$PROJ_NAME/run_task.py motor --run 2   # --run forwards through, same as taskActivation.py's own
+```
+
+See [stimuli_ptb/README.md](stimuli_ptb/README.md) (or
+[stimuli/README.md](stimuli/README.md) for the PsychoPy equivalents of motor
+and gambling) for what each task actually looks like to the subject.
 
 The rest of this section is the same thing spelled out by hand, for anyone
 who wants to see or customize each step individually:
@@ -310,12 +344,21 @@ taskActivation/
 ├── TESTING.md                # verifying each component
 ├── PREFLIGHT.md              # short checklist to run before every live session
 ├── quickstart.sh              # one-command direct-testing run (see Quick start below)
-├── taskActivation.py         # the only PYTHON script here: main RT-Cloud analysis
-│                              # (registration-free, task-agnostic, dicom streaming)
+│                              # -- quickstart.sh motor/checkerboard/gambling picks a task
+├── taskActivation.py         # main RT-Cloud analysis (registration-free, task-agnostic,
+│                              # dicom streaming) -- takes any conf/*.toml via --config
+├── run_task.py                # quick task selector: run_task.py {motor,checkerboard,gambling}
+│                              # -- just picks the matching conf/*.toml and runs taskActivation.py
 ├── conf/
-│   └── taskActivation.toml   # HcpMotor config (timing, GLM contrast, display settings)
+│   ├── taskActivation.toml   # default/example config: HcpMotor (left_hand vs right_hand)
+│   ├── motor.toml            # LEFT vs RIGHT finger tapping (GenericMotorLR_events.tsv)
+│   ├── checkerboard.toml     # flickering checkerboard ON vs OFF (Checkerboard_events.tsv)
+│   └── gambling.toml         # gambling WIN (reward) vs LOSS (punishment) (HcpGambling_acq-ap_events.tsv)
 ├── study_design/
-│   └── HcpMotor_acq-ap_events.tsv    # real ds000244 HcpMotor events (drives the design)
+│   ├── HcpMotor_acq-ap_events.tsv     # real ds000244 HcpMotor events (drives conf/taskActivation.toml)
+│   ├── GenericMotorLR_events.tsv      # this project's own LEFT/RIGHT-finger design (conf/motor.toml)
+│   ├── Checkerboard_events.tsv        # this project's own ON/OFF checkerboard design (conf/checkerboard.toml)
+│   └── HcpGambling_acq-ap_events.tsv  # real ds000244 HcpGambling events (conf/gambling.toml)
 ├── templates/                 # anonymized Enhanced multi-frame DICOM header for mock_scanner
 ├── dicomDir/                  # scanner DICOMs
 ├── utils/                     # everything taskActivation.py imports or that supports a live deployment
@@ -334,6 +377,12 @@ taskActivation/
 │   ├── hcp_motor_task.py            # presents the HcpMotor task (left/right hand, foot, tongue)
 │   ├── hcp_gambling_task.py         # presents the HcpGambling task (reward/punishment/neutral)
 │   ├── test_psychopy_install.py     # standalone smoke test for the PsychoPy install itself
+│   └── logs/                        # per-session timing-accuracy logs (gitignored)
+├── stimuli_ptb/                # Psychtoolbox (MATLAB) presentation of all three ready-made tasks
+│   ├── README.md                    # install/test Psychtoolbox, setup, running
+│   ├── motor_task.m, checkerboard_task.m, gambling_task.m   # the three task scripts
+│   ├── ptb_*.m                      # shared helpers (window setup, KbQueue, event-loop, logging)
+│   ├── test_ptb_install.m           # standalone smoke test for the Psychtoolbox install itself
 │   └── logs/                        # per-session timing-accuracy logs (gitignored)
 └── tutorial/                  # offline HCP-data validation of this analysis, no scanner needed
     ├── README.md                        # what it is + sample outputs

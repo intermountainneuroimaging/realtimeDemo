@@ -7,11 +7,19 @@
 # browser automatically as soon as it exists -- no separate copy/paste steps.
 #
 # Usage:
-#   ./quickstart.sh
+#   ./quickstart.sh                # default config (conf/taskActivation.toml)
+#   ./quickstart.sh motor          # LEFT vs RIGHT finger tapping (conf/motor.toml)
+#   ./quickstart.sh checkerboard   # flickering checkerboard ON vs OFF (conf/checkerboard.toml)
+#   ./quickstart.sh gambling       # gambling WIN vs LOSS (conf/gambling.toml)
+#
+# The <task> argument is just run_task.py's own task name -- see run_task.py
+# / README.md for what each config's eventsFile/GLM contrast is, and
+# stimuli_ptb/ (or stimuli/) for a real task to present on the stimulus
+# computer while this runs.
 #
 # All paths below have sane defaults (this project folder's own dicomDir/ and
 # a sibling outDir/), but you can override any of them by exporting first:
-#   DICOM_DIR=/path/to/real/dicomDir OUT_DIR=/path/to/outDir ./quickstart.sh
+#   DICOM_DIR=/path/to/real/dicomDir OUT_DIR=/path/to/outDir ./quickstart.sh motor
 #
 # rt-cloud's own startup prompt --
 #   Unable to connect to projectServer, continue using localfiles? (y/n):
@@ -21,6 +29,19 @@
 set -e
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ---- 0. optional task selector (see run_task.py) ----
+TASK="${1:-}"
+if [ -n "$TASK" ]; then
+    case "$TASK" in
+        motor|checkerboard|gambling) ;;
+        *)
+            echo "Unknown task: '$TASK' (expected motor, checkerboard, or gambling)" >&2
+            echo "Run with no argument to use the default conf/taskActivation.toml instead." >&2
+            exit 1
+            ;;
+    esac
+fi
 
 # ---- 1. required variables (edit these defaults, or export overrides first) ----
 export PROJ_NAME="${PROJ_NAME:-$(basename "$HERE")}"
@@ -39,6 +60,16 @@ echo
 if ! command -v docker >/dev/null 2>&1; then
     echo "docker not found on PATH -- install/start Docker Desktop first." >&2
     exit 1
+fi
+
+# config for whichever task was selected (or the default) -- dicomNamePattern/
+# minExpectedDicomSize/runNum are identical across every conf/*.toml today,
+# but resolve to the actual selected one anyway so that stays true if one
+# ever diverges.
+if [ -n "$TASK" ]; then
+    CONFIG_PATH="$PROJ_DIR/conf/$TASK.toml"
+else
+    CONFIG_PATH="$PROJ_DIR/conf/taskActivation.toml"
 fi
 
 # ---------------------------------------------------------------------------
@@ -61,7 +92,7 @@ elif command -v launchctl >/dev/null 2>&1 && launchctl print "gui/$(id -u)/$LAUN
 elif [ -n "$DICOM_BRIDGE_SOURCE" ]; then
     echo "[dicom_bridge] starting: --source $DICOM_BRIDGE_SOURCE --dest $DICOM_DIR"
     python3 "$PROJ_DIR/utils/dicom_bridge.py" \
-        --config "$PROJ_DIR/conf/taskActivation.toml" \
+        --config "$CONFIG_PATH" \
         --source "$DICOM_BRIDGE_SOURCE" --dest "$DICOM_DIR" &
     DICOM_BRIDGE_PID=$!
     trap '[ -n "$DICOM_BRIDGE_PID" ] && kill "$DICOM_BRIDGE_PID" 2>/dev/null' EXIT
@@ -94,10 +125,16 @@ fi
 #         using localfiles?' startup prompt with 'y' so this can run
 #         unattended -- no -t (no pseudo-tty needed once stdin is piped, and
 #         PYTHONUNBUFFERED keeps the per-volume log lines streaming live
-#         instead of batching up) ----
+#         instead of batching up). With a $TASK given, run_task.py picks the
+#         matching conf/<task>.toml; otherwise the default config. ----
+if [ -n "$TASK" ]; then
+    RUN_CMD="python projects/$PROJ_NAME/run_task.py $TASK"
+else
+    RUN_CMD="python projects/$PROJ_NAME/$PROJ_NAME.py"
+fi
 yes y | docker run -i --rm \
     -e PYTHONUNBUFFERED=1 \
     -v "$PROJ_DIR":/rt-cloud/projects/"$PROJ_NAME" \
     -v "$DICOM_DIR":/rt-cloud/projects/"$PROJ_NAME"/dicomDir \
     -v "$OUT_DIR":/rt-cloud/outDir \
-    brainiak/rtcloud:latest python projects/"$PROJ_NAME"/"$PROJ_NAME".py
+    brainiak/rtcloud:latest $RUN_CMD
