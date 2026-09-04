@@ -87,6 +87,15 @@ own `conf/*.toml` instead of the default:
 ./quickstart.sh gambling       # gambling WIN (reward) vs LOSS (punishment)
 ```
 
+Add `--run`/`-r <N>` (either before or after the task name, or on its own with
+the default config) to override the toml's `runNum` without editing it —
+handy for bridging/streaming a different run each session:
+
+```bash
+./quickstart.sh motor --run 2  # motor.toml, but run number 2
+./quickstart.sh --run 2        # default config, run number 2
+```
+
 | Task | `conf/*.toml` | `eventsFile` | `glmCondA` vs `glmCondB` | Present it with |
 |---|---|---|---|---|
 | Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_finger` vs `right_finger` | `stimuli_ptb/motor_task.m` |

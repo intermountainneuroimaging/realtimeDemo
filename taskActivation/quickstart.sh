@@ -7,15 +7,19 @@
 # browser automatically as soon as it exists -- no separate copy/paste steps.
 #
 # Usage:
-#   ./quickstart.sh                # default config (conf/taskActivation.toml)
-#   ./quickstart.sh motor          # LEFT vs RIGHT finger tapping (conf/motor.toml)
-#   ./quickstart.sh checkerboard   # flickering checkerboard ON vs OFF (conf/checkerboard.toml)
-#   ./quickstart.sh gambling       # gambling WIN vs LOSS (conf/gambling.toml)
+#   ./quickstart.sh                     # default config (conf/taskActivation.toml)
+#   ./quickstart.sh motor               # LEFT vs RIGHT finger tapping (conf/motor.toml)
+#   ./quickstart.sh checkerboard        # flickering checkerboard ON vs OFF (conf/checkerboard.toml)
+#   ./quickstart.sh gambling            # gambling WIN vs LOSS (conf/gambling.toml)
+#   ./quickstart.sh motor --run 2       # same, but run number 2 instead of the toml's runNum
+#   ./quickstart.sh --run 2             # default config, run number 2 (task name optional)
 #
 # The <task> argument is just run_task.py's own task name -- see run_task.py
 # / README.md for what each config's eventsFile/GLM contrast is, and
 # stimuli_ptb/ (or stimuli/) for a real task to present on the stimulus
-# computer while this runs.
+# computer while this runs. --run/-r overrides the toml's runNum, forwarded
+# straight through to run_task.py / taskActivation.py's own --run -- handy
+# for bridging/streaming a different run each session without editing the toml.
 #
 # All paths below have sane defaults (this project folder's own dicomDir/ and
 # a sibling outDir/), but you can override any of them by exporting first:
@@ -30,17 +34,52 @@ set -e
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ---- 0. optional task selector (see run_task.py) ----
-TASK="${1:-}"
+# ---- 0. optional task selector (see run_task.py) + optional --run/-r ----
+TASK=""
+RUN_ID=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --run|-r)
+            RUN_ID="$2"
+            shift 2
+            ;;
+        --run=*)
+            RUN_ID="${1#--run=}"
+            shift
+            ;;
+        -r=*)
+            RUN_ID="${1#-r=}"
+            shift
+            ;;
+        -*)
+            echo "Unknown option: '$1'" >&2
+            exit 1
+            ;;
+        *)
+            if [ -n "$TASK" ]; then
+                echo "Unexpected extra argument: '$1' (task already set to '$TASK')" >&2
+                exit 1
+            fi
+            TASK="$1"
+            shift
+            ;;
+    esac
+done
+
 if [ -n "$TASK" ]; then
     case "$TASK" in
         motor|checkerboard|gambling) ;;
         *)
             echo "Unknown task: '$TASK' (expected motor, checkerboard, or gambling)" >&2
-            echo "Run with no argument to use the default conf/taskActivation.toml instead." >&2
+            echo "Run with no task argument to use the default conf/taskActivation.toml instead." >&2
             exit 1
             ;;
     esac
+fi
+
+if [ -n "$RUN_ID" ] && ! [[ "$RUN_ID" =~ ^[0-9]+$ ]]; then
+    echo "Invalid --run value: '$RUN_ID' (expected a plain integer, e.g. --run 2)" >&2
+    exit 1
 fi
 
 # ---- 1. required variables (edit these defaults, or export overrides first) ----
@@ -55,6 +94,8 @@ echo "PROJ_NAME=$PROJ_NAME"
 echo "PROJ_DIR=$PROJ_DIR"
 echo "DICOM_DIR=$DICOM_DIR"
 echo "OUT_DIR=$OUT_DIR"
+echo "TASK=${TASK:-<default: taskActivation.toml>}"
+echo "RUN_ID=${RUN_ID:-<default: from the toml>}"
 echo
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -126,11 +167,15 @@ fi
 #         unattended -- no -t (no pseudo-tty needed once stdin is piped, and
 #         PYTHONUNBUFFERED keeps the per-volume log lines streaming live
 #         instead of batching up). With a $TASK given, run_task.py picks the
-#         matching conf/<task>.toml; otherwise the default config. ----
+#         matching conf/<task>.toml; otherwise the default config. $RUN_ID
+#         (if set) overrides the toml's runNum either way. ----
 if [ -n "$TASK" ]; then
     RUN_CMD="python projects/$PROJ_NAME/run_task.py $TASK"
 else
     RUN_CMD="python projects/$PROJ_NAME/$PROJ_NAME.py"
+fi
+if [ -n "$RUN_ID" ]; then
+    RUN_CMD="$RUN_CMD --run $RUN_ID"
 fi
 yes y | docker run -i --rm \
     -e PYTHONUNBUFFERED=1 \
