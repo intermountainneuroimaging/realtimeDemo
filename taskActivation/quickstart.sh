@@ -13,6 +13,7 @@
 #   ./quickstart.sh gambling            # gambling WIN vs LOSS (conf/gambling.toml)
 #   ./quickstart.sh motor --run 2       # same, but run number 2 instead of the toml's runNum
 #   ./quickstart.sh --run 2             # default config, run number 2 (task name optional)
+#   ./quickstart.sh motor --plot-every-frame --skip-motion-correction
 #
 # The <task> argument is just run_task.py's own task name -- see run_task.py
 # / README.md for what each config's eventsFile/GLM contrast is, and
@@ -20,6 +21,10 @@
 # computer while this runs. --run/-r overrides the toml's runNum, forwarded
 # straight through to run_task.py / taskActivation.py's own --run -- handy
 # for bridging/streaming a different run each session without editing the toml.
+# --plot-every-frame and --skip-motion-correction are likewise forwarded
+# straight through to taskActivation.py's own flags of the same name -- see
+# its --help for what each actually does (and --skip-motion-correction's
+# real accuracy tradeoff) before using them.
 #
 # All paths below have sane defaults (this project folder's own dicomDir/ and
 # a sibling outDir/), but you can override any of them by exporting first:
@@ -34,9 +39,11 @@ set -e
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ---- 0. optional task selector (see run_task.py) + optional --run/-r ----
+# ---- 0. optional task selector (see run_task.py) + optional flags ----
 TASK=""
 RUN_ID=""
+PLOT_EVERY_FRAME=""
+SKIP_MOTION_CORRECTION=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --run|-r)
@@ -49,6 +56,14 @@ while [ $# -gt 0 ]; do
             ;;
         -r=*)
             RUN_ID="${1#-r=}"
+            shift
+            ;;
+        --plot-every-frame)
+            PLOT_EVERY_FRAME=1
+            shift
+            ;;
+        --skip-motion-correction)
+            SKIP_MOTION_CORRECTION=1
             shift
             ;;
         -*)
@@ -90,12 +105,24 @@ export OUT_DIR="${OUT_DIR:-$PROJ_DIR/outDir}"
 
 mkdir -p "$DICOM_DIR" "$OUT_DIR"
 
+# clean OUT_DIR's contents before this run -- not DICOM_DIR (the scanner's
+# own input data is never auto-deleted here). Leftover files from a prior
+# run aren't just confusing to look at: the viewer auto-open step below
+# waits for viewer.html to EXIST, which would immediately succeed on a
+# leftover from a previous run instead of actually waiting for this run's
+# own output. "${OUT_DIR:?}" aborts instead of silently expanding to "" if
+# OUT_DIR were ever empty -- "$OUT_DIR"/* would otherwise become the
+# literal path /*.
+rm -rf "${OUT_DIR:?}"/*
+
 echo "PROJ_NAME=$PROJ_NAME"
 echo "PROJ_DIR=$PROJ_DIR"
 echo "DICOM_DIR=$DICOM_DIR"
 echo "OUT_DIR=$OUT_DIR"
 echo "TASK=${TASK:-<default: taskActivation.toml>}"
 echo "RUN_ID=${RUN_ID:-<default: from the toml>}"
+echo "PLOT_EVERY_FRAME=${PLOT_EVERY_FRAME:-0}"
+echo "SKIP_MOTION_CORRECTION=${SKIP_MOTION_CORRECTION:-0}"
 echo
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -176,6 +203,12 @@ else
 fi
 if [ -n "$RUN_ID" ]; then
     RUN_CMD="$RUN_CMD --run $RUN_ID"
+fi
+if [ -n "$PLOT_EVERY_FRAME" ]; then
+    RUN_CMD="$RUN_CMD --plot-every-frame"
+fi
+if [ -n "$SKIP_MOTION_CORRECTION" ]; then
+    RUN_CMD="$RUN_CMD --skip-motion-correction"
 fi
 yes y | docker run -i --rm \
     -e PYTHONUNBUFFERED=1 \

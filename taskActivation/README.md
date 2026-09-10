@@ -139,8 +139,9 @@ the script filename. `DICOM_DIR` needs volumes waiting in it before/while the
 run starts — either a real scanner's export folder (via `dicom_bridge.py`,
 below) or `mock_scanner.py` (see [TESTING.md](TESTING.md)). Once volumes are
 flowing, open `$OUT_DIR/live/viewer.html` in a browser for an auto-refreshing
-view of `current.png`/`motion.png` (this is what `quickstart.sh` opens for
-you automatically).
+view of `current.png` (this is what `quickstart.sh` opens for you
+automatically), and `$OUT_DIR/live/viewer-motion.html` for the same with
+`motion.png` — two separate pages so either can be watched on its own.
 
 Running this way (rather than through rt-cloud's own
 `run-projectInterface.sh` / web interface launcher) bypasses whatever sets the
@@ -286,13 +287,15 @@ The nilearn brain plot is not automatic — nothing renders it for you:
 | nilearn % -change activation plot (ortho cut at the ROI / active peak), stamped with the current frame/volume number | written to `outDir/live/current.png` every volume |
 | Full interactive ortho + ROI %-change timecourse | the `realtime_display.py` window, run manually against `outDir/live` |
 | Head motion (6 rigid-body params + framewise displacement) | `outDir/live/motion.tsv` / `motion.png` every volume; `motion_display.py` for a live window |
-| Browser view of `current.png` + `motion.png`, auto-refreshing every 0.5s | `outDir/live/viewer.html` — open directly in any browser, no Python needed |
+| Browser view of `current.png`, auto-refreshing every 0.5s | `outDir/live/viewer.html` — open directly in any browser, no Python needed |
+| Browser view of `motion.png`, auto-refreshing every 0.5s | `outDir/live/viewer-motion.html` — a separate page, so either view can be watched on its own |
 | Replay of the whole run's activation maps | `outDir/live/activation_run<N>.gif`, written once at the end of the run |
 
 The **Data Plots** tab can only render numeric line plots, so the brain image
 cannot go there. Easiest way to see it live: open `outDir/live/viewer.html`
-in any browser (auto-refreshes both images every half second, no setup
-needed). For the full interactive interface instead, run `realtime_display.py`
+in any browser (auto-refreshes every half second, no setup needed) — and
+`outDir/live/viewer-motion.html` alongside it for head motion. For the full
+interactive interface instead, run `realtime_display.py`
 on a machine that can see the `outDir/live/` folder:
 
 ```bash

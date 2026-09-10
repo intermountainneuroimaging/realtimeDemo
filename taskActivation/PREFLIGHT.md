@@ -96,13 +96,14 @@ confirm, for real:
 ## 6. You can see the live viewer
 
 ```bash
-open $OUT_DIR/live/viewer.html
+open $OUT_DIR/live/viewer.html          # activation (current.png)
+open $OUT_DIR/live/viewer-motion.html   # head motion (motion.png), on its own page
 ```
 
-It'll show broken images until the run actually starts writing `current.png`
-/ `motion.png` — that's expected — but confirm the *file* opens in a browser
-now, rather than discovering a bad `$OUT_DIR` path once the scan is already
-running.
+They'll show a broken image until the run actually starts writing
+`current.png` / `motion.png` — that's expected — but confirm the *files* open
+in a browser now, rather than discovering a bad `$OUT_DIR` path once the scan
+is already running.
 
 ## One dry run beats six checks
 

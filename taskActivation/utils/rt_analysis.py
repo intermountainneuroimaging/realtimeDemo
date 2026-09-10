@@ -409,17 +409,27 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
                      voxel_traces=None, frame=None, full_xlim=None):
     """Realtime plot via nilearn.plot_stat_map as a single-row AXIAL MOSAIC.
     Slice positions: `z_cuts` (a list of z-coords in mm) if given, else `n_slices`
-    auto-selected levels. Top row = per-frame map; when `contrast3d` is given a
-    SECOND mosaic row below shows the GLM contrast. `voxel_traces` (optional;
-    updated live every frame once the model is estimable, not just at the end
-    of the run) adds one line-plot row per entry below the brain rows, each
-    showing a peak voxel's measured signal vs its HRF-predicted signal.
-    `frame` (optional), if given, is stamped in large bold text in the top-left
-    corner of the mosaic -- a glance-able frame/volume counter distinct from
-    the smaller caption below the image. `full_xlim` (optional (lo, hi) in
-    seconds), if given, fixes the trace rows' x-axis to the whole expected run
-    instead of just the data seen so far, so the axis doesn't grow/rescale
-    frame to frame."""
+    auto-selected levels. Exactly ONE brain mosaic row is drawn: the GLM
+    contrast (`contrast3d`) once it's estimable, else the per-frame %-change
+    map (`zmap3d`) -- never both. `nilearn.plotting.plot_stat_map` is by far
+    the most expensive call in the whole live-update pipeline (each call costs
+    several hundred ms, measured via profiling), so drawing it twice per frame
+    (as an earlier version of this function did, %-change map ABOVE a second
+    GLM-contrast row) roughly doubled per-frame render time for most of a run
+    for marginal extra information -- the GLM contrast is the more directly
+    relevant map once it exists, so it replaces rather than supplements the
+    %-change map instead. `voxel_traces` (optional; updated live every frame
+    once the model is estimable, not just at the end of the run) adds one
+    line-plot row per entry below the brain row, each showing a peak voxel's
+    measured signal vs its HRF-predicted signal -- each entry's `'predicted'`
+    key is itself optional: omit/None draws just the measured line (used
+    before the GLM is estimable enough to fit a prediction at all; see
+    taskActivation.py's fallback trace). `frame` (optional), if given,
+    is stamped in large bold text in the top-left corner of the mosaic -- a
+    glance-able frame/volume counter distinct from the smaller caption below
+    the image. `full_xlim` (optional (lo, hi) in seconds), if given, fixes the
+    trace rows' x-axis to the whole expected run instead of just the data seen
+    so far, so the axis doesn't grow/rescale frame to frame."""
     try:
         import nibabel as nib
         from nilearn import plotting
@@ -430,30 +440,34 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
         cuts = list(z_cuts)                          # explicit mm levels
     else:
         cuts = _brain_z_cuts(ref3d, affine, n_slices) or n_slices   # real brain content, or fall back to auto count
-    cap = caption if caption is not None else f"red {condAName}>{condBName} / blue {condBName}>{condAName}"
-    zimg = nib.Nifti1Image(np.asarray(zmap3d, np.float32), affine)
     bg = nib.Nifti1Image(np.asarray(ref3d, np.float32), affine)
     has_con = (contrast3d is not None and np.isfinite(contrast3d).any()
                and np.nanmax(np.abs(contrast3d)) > 1e-6)
+    if has_con:
+        stat_img = nib.Nifti1Image(np.asarray(contrast3d, np.float32), affine)
+        stat_thresh, stat_cmap, stat_title = contrast_thresh, 'RdBu_r', contrast_label
+    else:
+        stat_img = nib.Nifti1Image(np.asarray(zmap3d, np.float32), affine)
+        cap = caption if caption is not None else f"red {condAName}>{condBName} / blue {condBName}>{condAName}"
+        stat_thresh, stat_cmap, stat_title = thresh, cmap, f"{title}  ({cap})"
     traces = voxel_traces or []
-    n_brain = 2 if has_con else 1
+    n_brain = 1
     nrows = n_brain + len(traces)
     height_ratios = [3.0] * n_brain + [1.5] * len(traces)
     fig_h = 2.9 * n_brain + 2.0 * len(traces)
     fig = plt.figure(figsize=(13, fig_h), facecolor='black')
     gs = fig.add_gridspec(nrows, 1, height_ratios=height_ratios, hspace=0.45)
     ax_top = fig.add_subplot(gs[0])
-    ax_bot = fig.add_subplot(gs[1]) if has_con else None
     # title=None here (not passed to plot_stat_map): nilearn draws its own
     # title INSIDE the image region, near the same top edge where it also
     # draws the L/R orientation labels, and the two can overlap/collide. Set
     # the title ourselves via ax.set_title() instead -- placed BELOW the
     # mosaic (negative y) and bold, so it reads as a caption clearly distinct
     # from nilearn's own in-image text (z-level labels, colorbar ticks, etc).
-    plotting.plot_stat_map(zimg, bg_img=bg, threshold=thresh, display_mode='z',
-                           cut_coords=cuts, colorbar=True, cmap=cmap, black_bg=True,
+    plotting.plot_stat_map(stat_img, bg_img=bg, threshold=stat_thresh, display_mode='z',
+                           cut_coords=cuts, colorbar=True, cmap=stat_cmap, black_bg=True,
                            figure=fig, axes=ax_top)
-    ax_top.set_title(f"{title}  ({cap})", color='white', fontsize=11,
+    ax_top.set_title(stat_title, color='white', fontsize=11,
                      fontweight='bold', y=-0.22)
     if frame is not None:
         # nilearn's plot_stat_map draws its own slice/colorbar axes on top of
@@ -465,13 +479,6 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
         fig.text(bbox.x0 + 0.006, bbox.y1 - 0.015, f"frame {int(frame)}",
                  color='yellow', fontsize=16, fontweight='bold', va='top', ha='left',
                  bbox=dict(facecolor='black', alpha=0.7, pad=3, edgecolor='none'))
-    if has_con:
-        cimg = nib.Nifti1Image(np.asarray(contrast3d, np.float32), affine)
-        plotting.plot_stat_map(cimg, bg_img=bg, threshold=contrast_thresh,
-                               display_mode='z', cut_coords=cuts, colorbar=True,
-                               cmap='RdBu_r', black_bg=True, figure=fig, axes=ax_bot)
-        ax_bot.set_title(contrast_label, color='white', fontsize=10,
-                         fontweight='bold', y=-0.22)
     # end-of-run: measured vs HRF-predicted timecourse at each condition's peak voxel.
     # All traces share the same underlying time axis (one glm_voxel_traces call,
     # same X/Y), but each trace's OWN stimulus blocks (axvspan, different onsets
@@ -491,8 +498,11 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
         for (b0, b1) in tr.get('blocks', []):
             ax.axvspan(b0, b1, color=tr.get('color', 'tab:red'), alpha=0.12)
         ax.plot(t, tr['measured'], color='white', lw=1.4, label='measured %\u0394S')
-        ax.plot(t, tr['predicted'], color=tr.get('color', 'tab:red'), lw=1.8,
-                ls='--', label='HRF-predicted')
+        # 'predicted' is optional -- absent for the simple measured-only
+        # trace shown before the GLM fit is estimable (see taskActivation.py)
+        if tr.get('predicted') is not None:
+            ax.plot(t, tr['predicted'], color=tr.get('color', 'tab:red'), lw=1.8,
+                    ls='--', label='HRF-predicted')
         ax.axhline(0, color='gray', lw=0.5)
         ax.set_xlim(*t_xlim)
         ax.set_title(tr['title'], color='white', fontsize=9)
@@ -551,16 +561,36 @@ _LIVE_VIEWER_HTML = """<!DOCTYPE html>
 <body>
   <h2>current.png</h2>
   <img id="current" src="current.png" alt="current.png">
-  <h2>motion.png</h2>
-  <img id="motion" src="motion.png" alt="motion.png">
   <script>
-    // reload each image (not the page) on a cache-busting query string, so
+    // reload the image (not the page) on a cache-busting query string, so
     // the browser always shows the latest file on disk without a full-page
     // refresh/flicker.
     function refresh() {
-      var t = Date.now();
-      document.getElementById('current').src = 'current.png?t=' + t;
-      document.getElementById('motion').src = 'motion.png?t=' + t;
+      document.getElementById('current').src = 'current.png?t=' + Date.now();
+    }
+    setInterval(refresh, 500);
+  </script>
+</body>
+</html>
+"""
+
+_LIVE_VIEWER_MOTION_HTML = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Real-time motion viewer</title>
+<style>
+  body { background: #000; color: #ddd; font-family: sans-serif; margin: 0; padding: 12px; }
+  h2 { font-size: 13px; font-weight: normal; color: #999; margin: 4px 0; }
+  img { max-width: 100%; display: block; margin-bottom: 16px; border: 1px solid #333; }
+</style>
+</head>
+<body>
+  <h2>motion.png</h2>
+  <img id="motion" src="motion.png" alt="motion.png">
+  <script>
+    function refresh() {
+      document.getElementById('motion').src = 'motion.png?t=' + Date.now();
     }
     setInterval(refresh, 500);
   </script>
@@ -571,15 +601,33 @@ _LIVE_VIEWER_HTML = """<!DOCTYPE html>
 
 def write_live_viewer_html(liveDir):
     """Write liveDir/viewer.html once: a plain browser page (no Python/matplotlib
-    needed to view it) that shows current.png + motion.png side by side and
-    reloads both every 500ms, so opening it in any browser pointed at outDir/live
-    is enough to watch the run live. Static content -- written once at startup,
-    not re-written per volume."""
+    needed to view it) that shows current.png (the GLM/%-change activation view)
+    and reloads it every 500ms, so opening it in any browser pointed at
+    outDir/live is enough to watch the run live. Static content -- written once
+    at startup, not re-written per volume. See write_live_viewer_motion_html()
+    for the separate motion.png viewer -- the two are split into different
+    pages (rather than one page with both images) so either can be watched on
+    its own without the other."""
     os.makedirs(liveDir, exist_ok=True)
     out = os.path.join(liveDir, 'viewer.html')
     tmp = out + '.tmp'
     with open(tmp, 'w') as f:
         f.write(_LIVE_VIEWER_HTML)
+    os.replace(tmp, out)
+    return out
+
+
+def write_live_viewer_motion_html(liveDir):
+    """Write liveDir/viewer-motion.html once: the motion.png counterpart to
+    write_live_viewer_html() -- a separate page rather than a second image on
+    the same page, so head-motion monitoring can be watched on its own screen/
+    tab independent of the activation view. Static content -- written once at
+    startup, not re-written per volume."""
+    os.makedirs(liveDir, exist_ok=True)
+    out = os.path.join(liveDir, 'viewer-motion.html')
+    tmp = out + '.tmp'
+    with open(tmp, 'w') as f:
+        f.write(_LIVE_VIEWER_MOTION_HTML)
     os.replace(tmp, out)
     return out
 

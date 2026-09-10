@@ -25,8 +25,10 @@ analysis validated against real HCP task data.
 -----------------------------------------------------------------------------"""
 import os
 import sys
+import time
 import warnings
 import argparse
+import multiprocessing
 from subprocess import call
 import tempfile
 from pathlib import Path
@@ -45,6 +47,14 @@ with warnings.catch_warnings():
 # hard os._exit() after printing the traceback bypasses that wait.
 def _exit_hard_on_error(exc_type, exc_value, exc_tb):
     sys.__excepthook__(exc_type, exc_value, exc_tb)
+    # os._exit() below skips normal interpreter shutdown entirely (that's the
+    # point -- see above), which means it also skips multiprocessing's own
+    # atexit-based cleanup of daemon child processes (e.g. the background
+    # plot worker) -- terminate any still-alive ones explicitly so a crash
+    # mid-run can't leave one orphaned when this isn't running inside a
+    # container whose own teardown would otherwise catch it.
+    for child in multiprocessing.active_children():
+        child.terminate()
     os._exit(1)
 sys.excepthook = _exit_hard_on_error
 
@@ -74,6 +84,31 @@ ap.add_argument('--run', '-r', default=None, type=int,
                      "running taskActivation.py directly (e.g. the 'Quick start: direct "
                      "testing' docker command) rather than through rt-cloud's own "
                      "run-projectInterface.sh / web interface launcher.")
+ap.add_argument('--plot-every-frame', action='store_true',
+                help="always render current.png's live update, even on volumes where the "
+                     "run has fallen more than LIVE_UPDATE_MAX_LAG_TRS TRs behind real "
+                     "scanner time (the default instead skips that render on those volumes "
+                     "-- it's the single most expensive per-volume step -- so a slow render "
+                     "doesn't compound into a growing backlog; analysis itself, the GLM "
+                     "buffer, and the Data Plots trace are never skipped either way). Use "
+                     "this for a replay/offline run where keeping every frame matters more "
+                     "than staying caught up to real time.")
+ap.add_argument('--skip-motion-correction', action='store_true',
+                help="OPT-IN, testing/demo only -- skip mcflirt entirely and smooth the raw "
+                     "fetched volume directly, instead of the motion-corrected one. Cuts a "
+                     "real per-volume cost (~0.3-0.4s) at the cost of real accuracy: without "
+                     "registration to a reference volume, subject motion shows up directly as "
+                     "signal change, contaminating both the %% change map and the GLM. "
+                     "motion.png/motion.tsv are also skipped in this mode (there would be "
+                     "nothing real to show). Default: off -- motion correction always runs.")
+ap.add_argument('--z-cuts', default=None, type=str,
+                help="comma-separated axial slice positions in mm, e.g. '0,17.5,35,52.5,70' "
+                     "-- if the first value is negative (e.g. '-36,...'), pass it as "
+                     "--z-cuts=-36,... (one token); as two separate argv tokens it looks like "
+                     "an unrecognized flag to argparse, not this option's value. Overrides "
+                     "the toml's zCuts for this run (run_task.py hard-codes these per task, "
+                     "tailored to where each task's activation actually falls, rather "
+                     "than the generic auto-selected levels). Leave unset to use the toml.")
 args = ap.parse_args(None)
 cfg = loadConfigFile(args.config)
 
@@ -94,6 +129,10 @@ curRun = args.run if args.run is not None else (
     int(cfg.runNum[0]) if isinstance(cfg.runNum, (list, tuple)) else int(cfg.runNum))
 if args.run is not None:
     print(f"[run] using run number {curRun} from --run (overrides toml runNum={cfg.runNum})")
+if args.skip_motion_correction:
+    print("[run] --skip-motion-correction is set: mcflirt will NOT run, volumes will be "
+          "smoothed unregistered, and motion.png/motion.tsv will not be written. Testing/demo "
+          "use only -- see --help for the accuracy tradeoff.")
 
 # ---- constants (not deployment-specific -- no need to expose these in the toml) ----
 AUTO_TR_TIMEOUT = 30.0     # seconds to wait for the first real DICOM to infer TR from
@@ -101,6 +140,19 @@ HRF_DELAY_SECONDS = 4.0    # canonical hemodynamic peak lag; hrf_delay (in volum
 NVOLS_FALLBACK_PADDING = 10  # extra volumes of headroom if nVols has to be estimated from events
 SUBJECT_NUM = 1            # BIDS 'subject' entity tag for the stream/archive (bookkeeping only)
 DEFAULT_N_SLICES = 6       # axial mosaic slice count when zCuts is empty
+LIVE_UPDATE_MAX_LAG_TRS = 2.0  # skip current.png's nilearn render (the single most expensive
+                                # per-volume step) once the run has fallen this many TRs behind
+                                # real scanner time, so a slow render doesn't compound into a
+                                # growing backlog -- everything else (motion correction, the GLM
+                                # buffer, the Data Plots trace) still runs on every volume
+                                # regardless; only the image itself is ever skipped.
+LIVE_UPDATE_MAX_STALE_S = 5.0  # ...but never skip more than this many real seconds in a row --
+                                # if per-volume processing alone (with no render at all) is still
+                                # slower than TR, lag_trs would never drop back under the
+                                # threshold above and rendering would stay skipped for the rest
+                                # of the run. This forces a render periodically regardless of
+                                # lag, so current.png is never left permanently stale/blank --
+                                # just updated less often than every volume while behind.
 
 # TR is always inferred from the first real DICOM's RepetitionTime (rather than
 # hand-copying it into a config) -- correct by construction for whatever
@@ -131,7 +183,10 @@ glmZscore = _cfg_opt('glmZscore', True, bool)           # z-score the GLM map ac
 _rt = _cfg_opt('restTypes', [], list) or []             # explicit rest trial_types; [] = auto-detect
 restTypes = _rt if _rt else None
 nSlices = DEFAULT_N_SLICES
-zCuts = mrt.parse_float_list(getattr(cfg, 'zCuts', None))  # fixed axial levels in mm; [] = auto
+# --z-cuts (run_task.py's hard-coded, task-tailored levels) overrides the toml
+zCuts = mrt.parse_float_list(args.z_cuts if args.z_cuts is not None else getattr(cfg, 'zCuts', None))
+if args.z_cuts is not None:
+    print(f"[run] using z-cuts {zCuts} from --z-cuts (overrides toml zCuts)")
 baselineFramesCfg = _cfg_opt('baselineFrames', -1, int)  # -1 = auto (frames before 1st event)
 saveGif = _cfg_opt('saveGif', True, bool)               # replay-able activation GIF at end of run
 gifFps = _cfg_opt('gifFps', 8, int)                     # GIF playback speed (frames/sec)
@@ -153,8 +208,11 @@ condBName = glmCondB
 liveDir = os.path.join(outPath, str(cfg.liveDirName))
 os.makedirs(liveDir, exist_ok=True)
 viewerPath = mrt.write_live_viewer_html(liveDir)
+motionViewerPath = mrt.write_live_viewer_motion_html(liveDir)
 print(f"Live viewer: open {viewerPath} in a browser for an auto-refreshing "
-      f"view of current.png + motion.png (updates every 0.5s).")
+      f"view of current.png (updates every 0.5s).")
+print(f"Motion viewer: open {motionViewerPath} for the same, watching motion.png "
+      f"on its own -- separate pages so either can be watched independently.")
 eventsPath = os.path.join(currPath, 'study_design', str(cfg.eventsFile))
 
 print(f"\n----{cfg.title}  [task={taskName}]  A={condAName} B={condBName}  run={curRun}----\n")
@@ -287,6 +345,29 @@ def fetch_volume(vol):
             "--clean) before starting a fresh run.") from e
     return inc.image
 
+
+def _plot_worker(q):
+    """Background process: runs mrt.write_live_update() (nilearn's rendering of
+    current.png, measured at ~0.6-0.9s -- the single most expensive per-volume
+    step) off the main loop's critical path, so it never blocks ingestion of
+    the NEXT volume's DICOM/motion-correction/GLM update, which have no
+    dependency on a previous frame's plot finishing. Runs on the 'fork' start
+    method's inherited copy of this module (Linux default; no re-import
+    needed), reading (args, kwargs) tuples from `q` until a None sentinel.
+    See where this is started for the queue-draining logic that keeps only
+    the newest not-yet-started frame pending -- this process alone doesn't
+    decide what to skip, it just renders whatever it's handed."""
+    while True:
+        item = q.get()
+        if item is None:
+            return
+        call_args, call_kwargs = item
+        try:
+            mrt.write_live_update(*call_args, **call_kwargs)
+        except Exception as e:
+            print(f"[plot_worker] write_live_update failed: {e}")
+
+
 currentBidsRun = BidsRun()
 
 # ---- running state ----
@@ -323,17 +404,32 @@ for vol in range(1, nVols + 1):
         nib.save(niftiObject, tmpPath + "/funcRef.nii")
         ref_img = nib.load(tmpPath + "/funcRef.nii")
         affine = ref_img.affine; vol_shape = ref_img.shape
+        run_start_time = time.time()   # real-time clock zero -- volume 1's own arrival,
+                                        # not script startup (which includes BIDS-stream/
+                                        # ClientInterface setup unrelated to scanner pacing)
+        last_render_time = run_start_time   # see LIVE_UPDATE_MAX_STALE_S below
+        plot_queue = multiprocessing.Queue()
+        plot_proc = multiprocessing.Process(target=_plot_worker, args=(plot_queue,), daemon=True)
+        plot_proc.start()
 
     # ---- preprocess: motion correct (with motion params) -> smooth ----
     nib.save(niftiObject, tmpPath + "/temp.nii")
-    call(f"mcflirt -in {tmpPath}/temp.nii -reffile {tmpPath}/funcRef.nii "
-         f"-out {tmpPath}/temp_mc -plots", shell=True)
-    # head-motion parameters for this volume (rot x/y/z rad, trans x/y/z mm)
-    par = mrt.read_mcflirt_par(tmpPath + "/temp_mc.par")
-    motion_rows.append([vol] + par)
-    mrt.write_motion(liveDir, motion_rows, TR=TR)
-    mrt.write_motion_png(liveDir, motion_rows, TR=TR, nVols=nVols)   # always-available motion.png
-    call(f'fslmaths {tmpPath}/temp_mc -kernel gauss {fwhm/2.3548} -fmean {tmpPath}/temp_sm', shell=True)
+    if args.skip_motion_correction:
+        # OPT-IN fast/testing path -- see --skip-motion-correction's help for
+        # the accuracy tradeoff. Smooths the raw fetched volume directly;
+        # motion.png/motion.tsv are skipped rather than showing a misleading
+        # flat "no motion" line for data that was never actually measured.
+        smooth_in = tmpPath + "/temp"
+    else:
+        call(f"mcflirt -in {tmpPath}/temp.nii -reffile {tmpPath}/funcRef.nii "
+             f"-out {tmpPath}/temp_mc -plots", shell=True)
+        # head-motion parameters for this volume (rot x/y/z rad, trans x/y/z mm)
+        par = mrt.read_mcflirt_par(tmpPath + "/temp_mc.par")
+        motion_rows.append([vol] + par)
+        mrt.write_motion(liveDir, motion_rows, TR=TR)
+        mrt.write_motion_png(liveDir, motion_rows, TR=TR, nVols=nVols)   # always-available motion.png
+        smooth_in = tmpPath + "/temp_mc"
+    call(f'fslmaths {smooth_in} -kernel gauss {fwhm/2.3548} -fmean {tmpPath}/temp_sm', shell=True)
     img_flat_raw = nib.load(tmpPath + '/temp_sm.nii.gz').get_fdata().astype(np.float32).flatten()
 
     # ---- brain mask: built ONCE, from the AVERAGE of the baseline (pre-task)
@@ -412,7 +508,27 @@ for vol in range(1, nVols + 1):
 
     # ---- live brain map: per-frame % change from baseline, labeled with the
     #      current condition; small corner inset = cumulative LEFT vs RIGHT contrast ----
-    if psc3d is not None and (point_idx % liveEveryTR) == 0 and ref3d is not None:
+    # `lag_trs`: how far real (wall-clock) time has pulled ahead of where volume
+    # `vol` "should" be if arriving exactly on schedule (vol 1 = TR 0). Skipping
+    # the render below when this is too large keeps the loop from digging
+    # itself deeper behind on every subsequent volume -- everything ABOVE this
+    # point (motion correction, the GLM buffer, the Data Plots trace) already
+    # ran unconditionally, so no analysis data is lost, only this one frame's
+    # current.png refresh.
+    now = time.time()
+    lag_trs = ((now - run_start_time) - (vol - 1) * TR) / TR if TR > 0 else 0.0
+    stale_s = now - last_render_time
+    # even while behind, force a render if it's been too long since the last
+    # one -- otherwise, if per-volume processing alone (no render at all) is
+    # still slower than TR, lag_trs would never drop back under the threshold
+    # and current.png would stay skipped for the rest of the run instead of
+    # just less often than every volume.
+    skip_for_lag = ((not args.plot_every_frame) and (lag_trs > LIVE_UPDATE_MAX_LAG_TRS)
+                    and (stale_s < LIVE_UPDATE_MAX_STALE_S))
+    if psc3d is not None and (point_idx % liveEveryTR) == 0 and ref3d is not None and skip_for_lag:
+        print(f"[perf] skipping current.png update for vol {vol} -- {lag_trs:.1f} TRs behind schedule")
+    elif psc3d is not None and (point_idx % liveEveryTR) == 0 and ref3d is not None:
+        last_render_time = now
         running_peak = mrt.peak_voxel(psc3d, brain_mask_flat.reshape(vol_shape))
         if roi_peak is not None and psc3d[running_peak] < mapThreshPct:
             center = roi_peak           # sit on the ROI during rest
@@ -444,16 +560,52 @@ for vol in range(1, nVols + 1):
         if Yglm is not None and vol >= Xglm.shape[1] + 2:
             vtraces = mrt.glm_voxel_traces(Xglm[:vol], Yglm[:vol], glm_names, mask_idx,
                                            vol_shape, TR, conds, events_rows)
+        if not vtraces and roi_peak is not None:
+            # the full measured-vs-HRF-predicted trace above needs the GLM to
+            # be estimable (min_on=4 "on" volumes for EACH condition of
+            # interest, in glm_beta_contrast) -- which can lag well behind
+            # when the ROI itself was already localized (right after the
+            # first block, see roi_peak above). Rather than showing nothing
+            # in the trace row until then, plot a simple measured-only line
+            # (no HRF-predicted overlay -- there isn't enough data yet to fit
+            # one reliably) of the ROI peak voxel's own % change so far.
+            vtraces = [{
+                't': [(v - 1) * TR for v in range(1, vol + 1)],
+                'measured': list(roi_trace),
+                'title': f"ROI ({firstLabel}) peak voxel -- measured (GLM fit not yet estimable)",
+                'color': 'white',
+            }]
 
-        mrt.write_live_update(
-            liveDir, curRun, vol, taskName, psc3d, ref3d, affine, center, mapThreshPct,
-            roi_trace, glob_trace, cond_trace,
-            condAName='ROI %\u0394S', condBName='peak %\u0394S',
-            caption='% change from baseline (red: increase, blue: decrease)',
-            traceALabel=f'ROI ({firstLabel}) %\u0394S', traceBLabel='whole-brain peak %\u0394S',
-            contrast3d=contrast3d, contrast_thresh=contrastThresh, condLabel=condLabel,
-            n_slices=nSlices, z_cuts=(zCuts or None), contrast_label=glmLabel,
-            voxel_traces=vtraces, full_xlim=fullXlim)
+        # dispatch to the background plot worker instead of calling directly --
+        # write_live_update's inputs are all captured above, and rendering them
+        # has no bearing on ingesting the NEXT volume, so it doesn't need to
+        # block this loop at all. Drain any not-yet-started pending job first
+        # so only the newest frame is ever waiting: if the worker is still busy
+        # on an older one, an in-between frame is dropped rather than piling
+        # up a backlog the worker would otherwise work through in order.
+        while not plot_queue.empty():
+            try:
+                plot_queue.get_nowait()
+            except Exception:
+                break
+        plot_queue.put((
+            (liveDir, curRun, vol, taskName, psc3d, ref3d, affine, center, mapThreshPct,
+             roi_trace, glob_trace, cond_trace),
+            dict(condAName='ROI %\u0394S', condBName='peak %\u0394S',
+                caption='% change from baseline (red: increase, blue: decrease)',
+                traceALabel=f'ROI ({firstLabel}) %\u0394S', traceBLabel='whole-brain peak %\u0394S',
+                contrast3d=contrast3d, contrast_thresh=contrastThresh, condLabel=condLabel,
+                n_slices=nSlices, z_cuts=(zCuts or None), contrast_label=glmLabel,
+                voxel_traces=vtraces, full_xlim=fullXlim)))
+
+# stop the background plot worker and wait for it to finish whatever it's
+# mid-render on, BEFORE the guaranteed final write below -- otherwise the two
+# could race to write current.png/the live_run*.npz bundle at the same time.
+plot_queue.put(None)
+plot_proc.join(timeout=30)
+if plot_proc.is_alive():
+    print("[plot_worker] did not exit cleanly within 30s -- terminating it.")
+    plot_proc.terminate()
 
 try:
     archive.appendBidsRun(currentBidsRun)
