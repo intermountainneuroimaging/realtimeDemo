@@ -1,4 +1,4 @@
-# Stimuli: PsychoPy presentation for the two worked-example tasks
+# Stimuli: PsychoPy presentation for the worked-example tasks
 
 Simple task-presentation scripts for the stimulus computer, so this project
 can be exercised **end to end with a real task** — not just a mock/replayed
@@ -14,15 +14,16 @@ task timing in MATLAB.
 
 ## Why this matters: one source of truth for timing
 
-`hcp_motor_task.py` and `hcp_gambling_task.py` read the exact same
-`study_design/*_events.tsv` files `taskActivation.py`'s real-time GLM design
-is built from. There's no separate, hand-copied timing table to keep in sync
-— whatever the subject is actually shown **is** what the analysis assumes
-happened, by construction.
+`hcp_motor_task.py`, `generic_motor_task.py`, and `hcp_gambling_task.py`
+read the exact same `study_design/*_events.tsv` files `taskActivation.py`'s
+real-time GLM design is built from. There's no separate, hand-copied timing
+table to keep in sync — whatever the subject is actually shown **is** what
+the analysis assumes happened, by construction.
 
 | Script | Events file | Conditions |
 |---|---|---|
 | `hcp_motor_task.py` | `../study_design/HcpMotor_acq-ap_events.tsv` | left/right hand, left/right foot, tongue (each with a brief get-ready cue) |
+| `generic_motor_task.py` | `../study_design/GenericMotorLR_events.tsv` | this project's own left/right finger-tapping design (`conf/motor.toml`) -- 30s tapping blocks separated by 10s rest, no get-ready cues; the Psychtoolbox equivalent is `../stimuli_ptb/motor_task.m` |
 | `hcp_gambling_task.py` | `../study_design/HcpGambling_acq-ap_events.tsv` | reward, punishment, neutral (card-guess + feedback) |
 
 ## Install and test PsychoPy
@@ -89,17 +90,19 @@ keypress is detected. A `[warn]` at step 3 with no `[FAIL]` just means no key
 was pressed in time — harmless, but see the macOS Accessibility note above
 if that keeps happening once you're actually trying to use a keyboard.
 
-Once that passes, you're ready to run `hcp_motor_task.py` / `hcp_gambling_task.py` below.
+Once that passes, you're ready to run `hcp_motor_task.py` /
+`generic_motor_task.py` / `hcp_gambling_task.py` below.
 
 ## Running
 
 ```bash
 cd stimuli
 python hcp_motor_task.py
+python generic_motor_task.py
 python hcp_gambling_task.py
 ```
 
-Both:
+All three:
 - **Wait for a scanner trigger** before starting (`--trigger-key`, default
   `5,t` — wire the scanner's sync pulse to send one of these, or press it
   yourself on the keyboard to test without a scanner). Every event is then
@@ -124,6 +127,12 @@ plain fixation (`+`) during rest. Matches `taskActivation.py`'s
 parts (and every `*_cue`) becoming GLM covariates, exactly as
 [README.md](../README.md#how-it-works) describes.
 
+**`generic_motor_task.py`** — bold green "LEFT FINGER" / "RIGHT FINGER"
+during the 30s tapping blocks; plain fixation (`+`) during the 10s rest
+blocks between them (no get-ready cue -- rest doubles as the lead-in).
+Matches `conf/motor.toml`'s `glmCondA=left_finger` / `glmCondB=right_finger`
+contrast for live analysis.
+
 **`hcp_gambling_task.py`** — each trial briefly shows a face-down card
 ("Higher or Lower? press any button"), then reveals the outcome: green
 `+$1.00` (reward), red `−$0.50` (punishment), or gray `$0.00` (neutral).
@@ -139,9 +148,9 @@ contrast with `neutral` as a covariate.
   continuous render loop that shows the right stimulus for wherever you are
   in the events.tsv relative to that trigger, handles rest gaps, timing-error
   logging, and Escape-to-abort), and a re-export of `read_events_tsv()`. Not
-  used by the live analysis pipeline itself — only by the two task scripts.
-- `hcp_motor_task.py`, `hcp_gambling_task.py` — the two task scripts described
-  above.
+  used by the live analysis pipeline itself — only by the task scripts.
+- `hcp_motor_task.py`, `generic_motor_task.py`, `hcp_gambling_task.py` — the
+  three task scripts described above.
 - `test_psychopy_install.py` — standalone smoke test (see "Install and test
   PsychoPy" above); no events.tsv or trigger involved, just confirms the
   install itself works.

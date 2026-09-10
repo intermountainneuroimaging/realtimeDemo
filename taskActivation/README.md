@@ -98,7 +98,7 @@ handy for bridging/streaming a different run each session:
 
 | Task | `conf/*.toml` | `eventsFile` | `glmCondA` vs `glmCondB` | Present it with |
 |---|---|---|---|---|
-| Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_finger` vs `right_finger` | `stimuli_ptb/motor_task.m` |
+| Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_finger` vs `right_finger` | `stimuli_ptb/motor_task.m` or `stimuli/generic_motor_task.py` |
 | Checkerboard | `checkerboard.toml` | `Checkerboard_events.tsv` | `checkerboard` vs *(empty — beta map, i.e. vs the implicit rest/OFF baseline)* | `stimuli_ptb/checkerboard_task.m` |
 | Gambling | `gambling.toml` | `HcpGambling_acq-ap_events.tsv` | `reward` vs `punishment` | `stimuli_ptb/gambling_task.m` |
 
@@ -383,10 +383,11 @@ taskActivation/
 │   └── make_design.py             # (optional) write static design files for inspection
 ├── testing/
 │   └── test_mock_scanner.py   # tests the mock DICOM scanner (frame pack/unpack + recovery)
-├── stimuli/                   # PsychoPy presentation of the two worked-example tasks
+├── stimuli/                   # PsychoPy presentation of the worked-example tasks
 │   ├── README.md                   # install/test PsychoPy, setup, running
 │   ├── common.py                    # shared trigger-wait / event-loop / timing-log helpers
 │   ├── hcp_motor_task.py            # presents the HcpMotor task (left/right hand, foot, tongue)
+│   ├── generic_motor_task.py        # presents this project's own LEFT/RIGHT-finger design (conf/motor.toml)
 │   ├── hcp_gambling_task.py         # presents the HcpGambling task (reward/punishment/neutral)
 │   ├── test_psychopy_install.py     # standalone smoke test for the PsychoPy install itself
 │   └── logs/                        # per-session timing-accuracy logs (gitignored)

@@ -1,10 +1,11 @@
 function motor_task(varargin)
 %MOTOR_TASK Psychtoolbox presentation of a simple L/R-finger motor task.
 %   MOTOR_TASK() waits for the scanner trigger, then presents alternating
-%   30-second blocks of LEFT FINGER tapping, RIGHT FINGER tapping, and REST
-%   (../study_design/GenericMotorLR_events.tsv: rest, left_finger, rest,
-%   right_finger, x3, + a trailing rest block -- 13 blocks, 390s total).
-%   Matches this project's real-time GLM contrast convention: point
+%   30-second LEFT FINGER / RIGHT FINGER tapping blocks separated by 10s
+%   REST blocks (../study_design/GenericMotorLR_events.tsv: rest,
+%   left_finger, rest, right_finger, x3, + a trailing rest block -- 13
+%   blocks, 250s total). Matches this project's real-time GLM contrast
+%   convention: point
 %   taskActivation.toml's eventsFile at GenericMotorLR_events.tsv and set
 %   glmCondA='left_finger', glmCondB='right_finger' to analyze it live.
 %

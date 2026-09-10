@@ -2,9 +2,10 @@
 #
 # Real-time, registration-free LEFT/RIGHT finger-tapping motor mapping,
 # streaming DICOMs from a real (or mock) scanner via dicomDir/. Pairs with
-# stimuli_ptb/motor_task.m (Psychtoolbox) or study_design/GenericMotorLR_events.tsv
-# presented by any other means: 30s blocks of REST / LEFT FINGER / RIGHT
-# FINGER (3 reps each + a trailing rest block, 390s total).
+# stimuli_ptb/motor_task.m (Psychtoolbox), stimuli/generic_motor_task.py
+# (PsychoPy), or study_design/GenericMotorLR_events.tsv presented by any
+# other means: 30s LEFT FINGER / RIGHT FINGER tapping blocks separated by
+# 10s REST blocks (3 reps each + a trailing rest block, 250s total).
 #
 # Run: python run_task.py motor   (see ../run_task.py / ../quickstart.sh motor)
 
@@ -73,7 +74,7 @@ plotTitle = 'Lateralization (LEFT-ROI minus RIGHT-ROI, % signal change)'
 plotXLabel = 'volume #'
 plotYLabel = 'LEFT - RIGHT % signal change'
 plotXRangeLow = 0
-plotXRangeHigh = 200       # rough (390s design / ~TR=2s); the analysis itself uses the
+plotXRangeHigh = 130       # rough (250s design / ~TR=2s); the analysis itself uses the
                            # real inferred TR regardless -- this only sizes the web widget
 plotYRangeLow = -2
 plotYRangeHigh = 2

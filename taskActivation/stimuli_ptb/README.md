@@ -13,7 +13,7 @@ files so the real-time analysis assumes exactly what's actually presented.
 
 | Script | Events file | Design |
 |---|---|---|
-| `motor_task.m` | `../study_design/GenericMotorLR_events.tsv` | 30s blocks: LEFT FINGER, RIGHT FINGER, REST (3 reps each + trailing rest, 13 blocks / 390s) |
+| `motor_task.m` | `../study_design/GenericMotorLR_events.tsv` | 30s LEFT FINGER / RIGHT FINGER tapping blocks separated by 10s REST blocks (3 reps each + trailing rest, 13 blocks / 250s) |
 | `gambling_task.m` | `../study_design/HcpGambling_acq-ap_events.tsv` | the HCP project's own card-guessing design, unchanged: reward / punishment / neutral |
 | `checkerboard_task.m` | `../study_design/Checkerboard_events.tsv` | 20s ON/OFF blocks: flickering full-contrast checkerboard vs fixation (6 reps + trailing rest, 13 blocks / 260s) |
 
