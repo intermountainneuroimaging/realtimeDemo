@@ -24,6 +24,20 @@ import rt_analysis as mrt  # noqa: E402 -- import after the sys.path setup above
 read_events_tsv = mrt.read_events_tsv  # re-exported for convenience
 
 
+def show_instructions(win, text, continue_keys=('space', 'escape')):
+    """Show a task-instructions screen (task description + the subject's
+    goal) and block until a continue key is pressed -- shown before
+    wait_for_trigger()'s own "Waiting for scanner..." screen, so the subject
+    sees what they're about to do before the run starts. Returns True if
+    Escape was pressed instead of continuing (caller should return early)."""
+    from psychopy import visual, event
+    msg = visual.TextStim(win, text=text, color='white', height=0.05, wrapWidth=1.6)
+    msg.draw()
+    win.flip()
+    keys = event.waitKeys(keyList=list(continue_keys))
+    return keys[0] == 'escape'
+
+
 def wait_for_trigger(win, trigger_keys=('5', 't'), instructions='Waiting for scanner...'):
     """Show `instructions` and block until one of `trigger_keys` is pressed
     (wire the scanner's sync pulse to send one of these -- '5' and 't' are

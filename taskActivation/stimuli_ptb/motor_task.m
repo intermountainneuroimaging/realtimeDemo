@@ -1,6 +1,7 @@
 function motor_task(varargin)
 %MOTOR_TASK Psychtoolbox presentation of a simple L/R-finger motor task.
-%   MOTOR_TASK() waits for the scanner trigger, then presents alternating
+%   MOTOR_TASK() shows a brief task-instructions screen (dismiss with SPACE,
+%   or Escape to abort), waits for the scanner trigger, then presents alternating
 %   30-second LEFT FINGER / RIGHT FINGER tapping blocks separated by 10s
 %   REST blocks (../study_design/GenericMotorLR_events.tsv: rest,
 %   left_finger, rest, right_finger, x3, + a trailing rest block -- 13
@@ -71,6 +72,16 @@ function motor_task(varargin)
         else
             DrawFormattedText(win, '+', 'center', 'center', [1 1 1]);
         end
+    end
+
+    instructions = ['LEFT/RIGHT FINGER TAPPING TASK\n\n' ...
+        'When you see LEFT FINGER, repeatedly tap the fingers of your left hand ' ...
+        '(e.g. thumb to each fingertip in turn). When you see RIGHT FINGER, do the ' ...
+        'same with your right hand. During the + fixation cross, relax and stay still.\n\n' ...
+        'Goal: keep tapping steadily for the whole block shown, using the correct hand.\n\n' ...
+        'Press SPACE when you are ready to begin.'];
+    if ptb_show_instructions(win, instructions)
+        return
     end
 
     t0 = ptb_wait_for_trigger(win, opt.TriggerKey, 'Waiting for scanner trigger...');

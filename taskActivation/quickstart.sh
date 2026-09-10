@@ -10,7 +10,7 @@
 #   ./quickstart.sh                     # default config (conf/taskActivation.toml)
 #   ./quickstart.sh motor               # LEFT vs RIGHT finger tapping (conf/motor.toml)
 #   ./quickstart.sh checkerboard        # flickering checkerboard ON vs OFF (conf/checkerboard.toml)
-#   ./quickstart.sh gambling            # gambling WIN vs LOSS (conf/gambling.toml)
+#   ./quickstart.sh gambling            # blackjack WIN vs LOSE (conf/gambling.toml)
 #   ./quickstart.sh motor --run 2       # same, but run number 2 instead of the toml's runNum
 #   ./quickstart.sh --run 2             # default config, run number 2 (task name optional)
 #   ./quickstart.sh motor --plot-every-frame --skip-motion-correction

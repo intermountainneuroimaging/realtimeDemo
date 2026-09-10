@@ -1,26 +1,32 @@
-##### Configuration file: gambling (reward/WIN vs punishment/LOSS) #####
+##### Configuration file: gambling (blackjack WIN vs LOSE) #####
 #
 # Real-time, registration-free reward-processing mapping, streaming DICOMs
-# from a real (or mock) scanner via dicomDir/. Uses the ds000244 (Individual
-# Brain Charting) "HcpGambling" task design as its event timing/GLM
-# template. Pairs with stimuli_ptb/gambling_task.m (Psychtoolbox) or the
-# PsychoPy stimuli/hcp_gambling_task.py.
+# from a real (or mock) scanner via dicomDir/. This project's own two-card
+# blackjack design (win/tie/lose) -- the same timing/outcome schedule as the
+# original ds000244 (Individual Brain Charting) "HcpGambling" task, just
+# re-themed as a hit(1)/stay(2) card game (win<-reward, lose<-punishment,
+# tie<-neutral). See study_design/Blackjack_events.tsv. Pairs with
+# stimuli_ptb/blackjack_task.m (Psychtoolbox) or the PsychoPy
+# stimuli/blackjack_task.py. The original card-guess presentation
+# (gambling_task.m / hcp_gambling_task.py, HcpGambling_acq-ap_events.tsv) is
+# untouched and still used by tutorial/'s offline validation against the
+# real ds000244 data.
 #
 # Run: python run_task.py gambling   (see ../run_task.py / ../quickstart.sh gambling)
 
-title = "Real-Time fMRI Task Activation (gambling WIN vs LOSS)"
+title = "Real-Time fMRI Task Activation (blackjack WIN vs LOSE)"
 
 # ---- generic real-time task-activation demo ----
 
-taskName = "HcpGambling"
+taskName = "Blackjack"
 
 # events file (shipped) used to build the per-volume design at runtime.
-eventsFile = "HcpGambling_acq-ap_events.tsv"
+eventsFile = "Blackjack_events.tsv"
 
-# condition display names. cond A = reward (WIN), cond B = punishment (LOSS).
-# 'neutral' trials become their own GLM covariate automatically (see
+# condition display names. cond A = win, cond B = lose.
+# 'tie' trials become their own GLM covariate automatically (see
 # classify_conditions() in utils/rt_analysis.py) -- not treated as rest and
-# not part of this contrast, exactly matching the HCP task's own design.
+# not part of this contrast, exactly matching the win/tie/lose design.
 #
 # Not configured here (fixed in taskActivation.py -- not deployment-specific):
 # TR is always inferred from the first real DICOM's RepetitionTime; hrf_delay
@@ -51,8 +57,8 @@ fwhm = 5                   # smoothing FWHM (mm)
 mapThreshPct = 0.5         # %-signal-change threshold for the per-frame activation overlay
 contrastThresh = 2.0       # GLM map threshold (z units when glmZscore=true)
 driftOrder = 1             # polynomial drift terms in the GLM (per-run)
-glmCondA = "reward"        # GLM contrast condA-condB (WIN); also used as the display label
-glmCondB = "punishment"    # (LOSS); set empty ("") to plot the condA beta weight instead
+glmCondA = "win"           # GLM contrast condA-condB (WIN); also used as the display label
+glmCondB = "lose"          # (LOSE); set empty ("") to plot the condA beta weight instead
 glmZscore = true           # z-score the GLM map across voxels
 restTypes = []             # trial_types to treat as implicit baseline; [] = auto-detect (rest/fixation/...)
 zCuts = []                 # fixed axial slice positions in mm, e.g. [-20,-5,10,25,40,55]; [] = auto
@@ -70,10 +76,10 @@ saveGif = true             # at end of run, assemble every saved frame into a
                            # replay-able outDir/live/activation_run<N>.gif
 gifFps = 8                 # GIF playback speed (frames/sec)
 
-# ---- web Data Plots tab (WIN-ROI %SC minus LOSS-ROI %SC) ----
-plotTitle = 'Reward processing (WIN-ROI minus LOSS-ROI, % signal change)'
+# ---- web Data Plots tab (WIN-ROI %SC minus LOSE-ROI %SC) ----
+plotTitle = 'Blackjack (WIN-ROI minus LOSE-ROI, % signal change)'
 plotXLabel = 'volume #'
-plotYLabel = 'WIN - LOSS % signal change'
+plotYLabel = 'WIN - LOSE % signal change'
 plotXRangeLow = 0
 plotXRangeHigh = 180       # rough (~345s design / ~TR=2s); the analysis itself uses the
                            # real inferred TR regardless -- this only sizes the web widget

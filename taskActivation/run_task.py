@@ -50,7 +50,7 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 TASKS = {
     'motor':        ('motor.toml',        'LEFT vs RIGHT finger tapping'),
     'checkerboard': ('checkerboard.toml',  'flickering checkerboard ON vs OFF'),
-    'gambling':     ('gambling.toml',      'gambling WIN (reward) vs LOSS (punishment)'),
+    'gambling':     ('gambling.toml',      'blackjack WIN vs LOSE (tie as covariate)'),
 }
 
 # task -> 5 axial slice positions (mm), hard-coded to where each task's

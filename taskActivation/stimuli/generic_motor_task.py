@@ -14,6 +14,10 @@ glmCondB=right_finger). Unlike hcp_motor_task.py's original 5-condition HCP
 dataset, there are no "_cue" get-ready periods here -- rest between blocks
 doubles as the get-ready period.
 
+Shows a brief task-instructions screen (task description + the subject's
+goal; dismiss with SPACE, or Escape to abort) before waiting for the
+scanner trigger.
+
 Run (needs `pip install psychopy` and a display):
     python generic_motor_task.py                    # waits for scanner trigger '5' or 't'
     python generic_motor_task.py --windowed          # not fullscreen, for testing
@@ -74,6 +78,16 @@ def main():
         if trial_type is None:
             return fixation
         return stims.get(trial_type, fixation)
+
+    instructions = (
+        "LEFT/RIGHT FINGER TAPPING TASK\n\n"
+        "When you see LEFT FINGER, repeatedly tap the fingers of your left hand "
+        "(e.g. thumb to each fingertip in turn). When you see RIGHT FINGER, do the "
+        "same with your right hand. During the + fixation cross, relax and stay still.\n\n"
+        "Goal: keep tapping steadily for the whole block shown, using the correct hand.\n\n"
+        "Press SPACE when you are ready to begin.")
+    if common.show_instructions(win, instructions):
+        core.quit()
 
     clock, t0 = common.wait_for_trigger(win, trigger_keys=args.trigger_key.split(','),
                                         instructions='Waiting for scanner trigger...')

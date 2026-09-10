@@ -14,10 +14,11 @@ files so the real-time analysis assumes exactly what's actually presented.
 | Script | Events file | Design |
 |---|---|---|
 | `motor_task.m` | `../study_design/GenericMotorLR_events.tsv` | 30s LEFT FINGER / RIGHT FINGER tapping blocks separated by 10s REST blocks (3 reps each + trailing rest, 13 blocks / 250s) |
-| `gambling_task.m` | `../study_design/HcpGambling_acq-ap_events.tsv` | the HCP project's own card-guessing design, unchanged: reward / punishment / neutral |
+| `blackjack_task.m` | `../study_design/Blackjack_events.tsv` | this project's own two-card blackjack design: hit(1)/stay(2) on a dealt hand, then a pre-scripted win / lose / tie outcome (same schedule as `HcpGambling_acq-ap_events.tsv`'s reward/punishment/neutral, just re-themed) |
+| `gambling_task.m` | `../study_design/HcpGambling_acq-ap_events.tsv` | the original HCP project's own card-guessing design, unchanged: reward / punishment / neutral -- kept as-is for `tutorial/`'s offline validation against the real ds000244 data |
 | `checkerboard_task.m` | `../study_design/Checkerboard_events.tsv` | 20s ON/OFF blocks: flickering full-contrast checkerboard vs fixation (6 reps + trailing rest, 13 blocks / 260s) |
 
-All three events.tsv files live in the top-level `study_design/` (not
+All events.tsv files live in the top-level `study_design/` (not
 `tutorial/study_design/`) — the exact folder `taskActivation.py` itself
 reads `eventsFile` from — so what MATLAB presents and what the live
 analysis assumes can never point at different copies of the same design.
@@ -30,11 +31,14 @@ Each task has its own ready-to-use config — `../conf/motor.toml`,
 |---|---|---|---|---|
 | Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_finger` | `right_finger` |
 | Checkerboard | `checkerboard.toml` | `Checkerboard_events.tsv` | `checkerboard` | *(empty — single-condition beta map, i.e. ON vs the implicit rest/OFF baseline)* |
-| Gambling | `gambling.toml` | `HcpGambling_acq-ap_events.tsv` | `reward` | `punishment` |
+| Gambling (blackjack) | `gambling.toml` | `Blackjack_events.tsv` | `win` | `lose` |
 
 Run any of the three end to end with `../run_task.py` (see
 [README.md](../README.md#running-with-live-scanner-data) / `quickstart.sh
 <task>` in the main project) — e.g. `python ../run_task.py motor`.
+`gambling_task.m` (the original card-guess design) isn't wired to any
+`conf/*.toml` GLM contrast anymore -- run it directly for a look at the
+original HCP task, or for `tutorial/`'s own offline validation.
 
 ## Responses are recorded via KbQueue, not KbCheck
 
@@ -46,27 +50,41 @@ instant* you call it, so in a realtime presentation loop (busy drawing and
 waiting on `Screen('Flip')`) that pulse can easily land entirely between
 two checks and simply never be seen.
 
-`gambling_task.m` starts a `KbQueue` once for the **whole run**
-(`ptb_kbqueue_setup.m`), which hands keyboard buffering off to PTB's own
-background collection — every press is timestamped and stored the instant
-it happens, regardless of what the main loop is doing at that moment.
-`ptb_kbqueue_check_any.m` is then polled once per frame and always sees
-whatever was buffered since the last check, no matter how the loop's own
-timing lined up with the actual press. The **same** per-frame check also
+`gambling_task.m` and `blackjack_task.m` each start a `KbQueue` once for the
+**whole run** (`ptb_kbqueue_setup.m`), which hands keyboard buffering off to
+PTB's own background collection — every press is timestamped and stored the
+instant it happens, regardless of what the main loop is doing at that
+moment. `ptb_kbqueue_check_any.m` is then polled once per frame and always
+sees whatever was buffered since the last check, no matter how the loop's
+own timing lined up with the actual press. The **same** per-frame check also
 catches Escape (rather than a second, separately-fallible `KbCheck` call),
 so an abort can't be missed for the same reason a response can't.
 
-Each trial's response — the key pressed and its reaction time relative to
-the guess-phase onset — is written into the timing log's `response_key` /
+Each trial's response(s) are written into the timing log's `response_key` /
 `response_time_s` columns (`'none'` / `NaN` if the subject didn't respond in
-time). As in the real HCP task, the guess doesn't change the outcome; which
-outcome appears and when is entirely driven by the events.tsv.
+time). For `gambling_task.m` that's the single guess keypress; for
+`blackjack_task.m` it's the full hit/stay sequence for that trial (e.g.
+`"1;1;2"`) and the time of the last one. Either way, the response never
+changes the outcome — as in the real HCP task, which outcome appears and
+when is entirely driven by the events.tsv.
 
 `motor_task.m` and `checkerboard_task.m` don't collect responses at all (pure
 block presentation), so they don't use a `KbQueue` — Escape is checked with a
 plain `KbCheck` each frame in `ptb_run_block_loop.m`, which is fine for an
 experimenter manually aborting (unlike a scanner button pulse, nothing is
 lost if a keypress held for a moment is seen a frame later).
+
+## Task instructions screen
+
+`motor_task.m`, `checkerboard_task.m`, and `blackjack_task.m` each show a
+brief task-instructions screen — what the task is and what the subject's
+goal is — right after the window opens, **before** the "Waiting for scanner
+trigger..." screen. `ptb_show_instructions.m` draws the text and blocks
+until SPACE is pressed (via the same `KbQueue` mechanism as everything
+else here — see above), or returns early if Escape is pressed so the
+caller can abort before the run even starts. The instructions text itself
+is a fixed string in each task script, not a configurable option — edit it
+directly there if you want different wording for your site.
 
 ## Screen / display setup
 
@@ -90,8 +108,8 @@ lost if a keypress held for a moment is seen a frame later).
 
 ## Clean exit on every path
 
-Every task script wraps its window (and, for `gambling_task.m`, its
-`KbQueue`) in MATLAB's `onCleanup`, e.g.:
+Every task script wraps its window (and, for `gambling_task.m` /
+`blackjack_task.m`, its `KbQueue`) in MATLAB's `onCleanup`, e.g.:
 ```matlab
 win = ptb_open_window(...);
 cleanupWin = onCleanup(@() sca);   % Screen('CloseAll') + ShowCursor + Priority(0)
@@ -100,8 +118,9 @@ cleanupWin = onCleanup(@() sca);   % Screen('CloseAll') + ShowCursor + Priority(
 completion, an Escape-triggered abort, or an uncaught error partway through
 — so the display and keyboard queue are always released and the subject is
 never left staring at a frozen/black screen because of a bug or a MATLAB
-error dialog. `gambling_task.m` also always writes its timing log (including
-whatever responses were recorded) before returning, even on an Escape abort.
+error dialog. `gambling_task.m` / `blackjack_task.m` also always write their
+timing log (including whatever responses were recorded) before returning,
+even on an Escape abort.
 
 ## Install and test Psychtoolbox
 
@@ -140,9 +159,10 @@ gives a number key rather than the plain digit — e.g. `'5%'` instead of
 `'5'`, `'1!'`/`'2@'` instead of `'1'`/`'2'` — depending on the interface
 hardware. The task scripts' defaults already include both forms
 (`{'5','5%','t'}` for triggers, `{'1','1!','2','2@','3','3#','4','4$'}` for
-gambling responses), but if your site's box reports something else
-entirely, run `test_ptb_install`, press the actual trigger or button once,
-and pass whatever it prints via `'TriggerKey'` / `'ResponseKeys'`.
+`gambling_task.m`'s guess responses, `{'1','1!','2','2@'}` for
+`blackjack_task.m`'s hit/stay), but if your site's box reports something
+else entirely, run `test_ptb_install`, press the actual trigger or button
+once, and pass whatever it prints via `'TriggerKey'` / `'ResponseKeys'`.
 
 **Known platform gotchas:**
 - **`Screen.mex... seems to be missing or inaccessible` / `AssertOpenGL`
@@ -185,18 +205,22 @@ and pass whatever it prints via `'TriggerKey'` / `'ResponseKeys'`.
   troubleshooting (PTB prints a detailed report) rather than just leaving
   `SkipSyncTests` on — a real scanner-room display should pass cleanly.
 
-Once that passes, you're ready to run `motor_task.m` / `gambling_task.m` /
-`checkerboard_task.m` below.
+Once that passes, you're ready to run `motor_task.m` / `blackjack_task.m` /
+`gambling_task.m` / `checkerboard_task.m` below.
 
 ## Running
 
 ```matlab
 motor_task
+blackjack_task
 gambling_task
 checkerboard_task
 ```
 
-All three:
+All four (except `gambling_task.m`, the original HCP task -- see below):
+- **Show a task-instructions screen first** — a brief description of the
+  task and the subject's goal, dismissed with SPACE (or Escape to abort
+  before the run even starts). See "Task instructions screen" below.
 - **Wait for a scanner trigger** before starting (`'TriggerKey'`, default
   `{'5','5%','t'}` — wire the scanner's sync pulse to send one of these, or
   pass `'TriggerKey', {'space'}` to press it yourself on the keyboard to
@@ -204,10 +228,10 @@ All three:
   trigger moment (`GetSecs()`), matching how the real-time analysis anchors
   its own timing to the first DICOM.
 - **Log actual vs expected onset time** per event to
-  `stimuli_ptb/logs/<task>_<timestamp>.tsv` (`gambling_task.m`'s log also
-  has `response_key` / `response_time_s` columns — see above), so you can
-  check real presentation accuracy against the design afterward
-  (`'LogPath'` to change the path).
+  `stimuli_ptb/logs/<task>_<timestamp>.tsv` (`gambling_task.m`'s and
+  `blackjack_task.m`'s logs also have `response_key` / `response_time_s`
+  columns — see above), so you can check real presentation accuracy against
+  the design afterward (`'LogPath'` to change the path).
 - Fill the stimulus display by default (`'Windowed', true` for testing on a
   laptop without hiding everything else; `'ScreenWidth'`/`'ScreenHeight'`
   for a known projector resolution — see "Screen / display setup" above).
@@ -224,15 +248,26 @@ movement blocks; plain fixation (`+`) during rest. Matches
 `taskActivation.py`'s `glmCondA=left_finger` / `glmCondB=right_finger`
 contrast when the toml is pointed at `GenericMotorLR_events.tsv`.
 
-**`gambling_task.m`** — each trial briefly shows a face-down card ("Higher
-or Lower? press any button"), then reveals the outcome: green `+$1.00`
-(reward), red `−$0.50` (punishment), or gray `$0.00` (neutral) — or gray
-"No response `$0.00`" if the subject didn't press anything during the guess
-phase, regardless of what the trial was scheduled to pay out (an incentive
-to actually respond; the events.tsv / GLM design are unaffected). As in the
-real HCP task, the guess doesn't actually change which outcome a responded
-trial gets. Matches `taskActivation.py`'s `glmCondA=reward` /
-`glmCondB=punishment` contrast with `neutral` as a covariate.
+**`blackjack_task.m`** — each trial deals two cards face-up (never a natural
+blackjack — an Ace paired with a 10-value card is never dealt as the
+opening hand); the subject may press **1 = HIT** (deal another card) or
+**2 = STAY** (freeze the hand) during a brief decision window, then the
+outcome is revealed: green `WIN +$1.00`, red `LOSE −$0.50`, or gray
+`TIE $0.00` — or gray "No response `$0.00`" if the subject never pressed
+anything, regardless of what the trial was scheduled to pay out (an
+incentive to actually respond; the events.tsv / GLM design are unaffected).
+The dealt cards and the hit/stay choice are purely cosmetic and never change
+the outcome — matches `taskActivation.py`'s `glmCondA=win` / `glmCondB=lose`
+contrast with `tie` as a covariate.
+
+**`gambling_task.m`** — the original HCP card-guessing task, unchanged: each
+trial briefly shows a face-down card ("Higher or Lower? press any button"),
+then reveals the outcome: green `+$1.00` (reward), red `−$0.50`
+(punishment), or gray `$0.00` (neutral) — or gray "No response `$0.00`" if
+the subject didn't press anything during the guess phase. As in the real HCP
+task, the guess doesn't actually change which outcome a responded trial
+gets. Not wired to any `conf/*.toml` contrast anymore (see the task table
+above) — run it directly, or via `tutorial/`'s offline validation.
 
 **`checkerboard_task.m`** — a full-contrast checkerboard patch reversing
 black/white at `'FlickerHz'` (default 8) times per second during ON blocks;
@@ -251,14 +286,17 @@ plain fixation during OFF blocks. Matches `taskActivation.py`'s
 - `ptb_wait_for_trigger.m` — blocks until the scanner trigger (or a test
   keypress), via the same KbQueue mechanism, returning the trigger's
   `GetSecs()` timestamp.
+- `ptb_show_instructions.m` — shows the task-instructions screen (see
+  above) and blocks until a continue key (or Escape) is pressed, via the
+  same KbQueue mechanism.
 - `ptb_run_block_loop.m` — the render loop `motor_task.m` /
   `checkerboard_task.m` share: draws whatever the caller's `stimFor`
   callback returns for the current time, handles rest gaps, writes the
   timing-accuracy log, and checks Escape.
 - `ptb_write_event_log.m` — writes a tab-delimited log from a header +
   row cell array.
-- `motor_task.m`, `gambling_task.m`, `checkerboard_task.m` — the three task
-  scripts described above.
+- `motor_task.m`, `blackjack_task.m`, `gambling_task.m`,
+  `checkerboard_task.m` — the four task scripts described above.
 - `test_ptb_install.m` — standalone smoke test (see "Install and test
   Psychtoolbox" above); also the fastest way to discover your trigger/
   button box's real PTB key names.
@@ -273,6 +311,11 @@ reading Psychtoolbox's documented API and cross-checked against a real,
 working MATLAB/PTB experiment script from this lab (confirming the KbQueue
 response pattern, screen-size/display-selection conventions, and clean-exit
 structure above), and checked for structural/syntax correctness, but they
-have **not** been run end-to-end in MATLAB. Run `test_ptb_install.m` first,
-then a short test run of each task (`'Windowed', true`, `'TriggerKey',
-{'space'}`) before a real session.
+have **not** been run end-to-end in MATLAB (`blackjack_task.m` included —
+no Octave/MATLAB was available to execute it in this environment either;
+its underlying design was instead validated indirectly, by confirming
+`Blackjack_events.tsv` and `conf/gambling.toml` produce the expected
+win/lose/tie GLM classification and a real end-to-end run against the mock
+scanner in Docker). Run `test_ptb_install.m` first, then a short test run of
+each task (`'Windowed', true`, `'TriggerKey', {'space'}`) before a real
+session.

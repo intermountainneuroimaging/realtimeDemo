@@ -1,8 +1,9 @@
 function checkerboard_task(varargin)
 %CHECKERBOARD_TASK Psychtoolbox presentation of a flickering-checkerboard
 %   visual localizer: alternating ON (flickering full-contrast checkerboard)
-%   / OFF (fixation only) blocks. Waits for the scanner trigger, then
-%   presents ../study_design/Checkerboard_events.tsv (rest, checkerboard,
+%   / OFF (fixation only) blocks. Shows a brief task-instructions screen
+%   (dismiss with SPACE, or Escape to abort), waits for the scanner trigger,
+%   then presents ../study_design/Checkerboard_events.tsv (rest, checkerboard,
 %   x6, + a trailing rest block; 20s blocks, 13 blocks, 260s total). Matches
 %   this project's real-time GLM convention: point taskActivation.toml's
 %   eventsFile at Checkerboard_events.tsv and set glmCondA='checkerboard',
@@ -93,6 +94,17 @@ function checkerboard_task(varargin)
         else
             DrawFormattedText(win, '+', 'center', 'center', [1 1 1]);
         end
+    end
+
+    instructions = ['CHECKERBOARD VIEWING TASK\n\n' ...
+        'You will see a flickering black-and-white checkerboard pattern, alternating ' ...
+        'with a plain + fixation cross.\n\n' ...
+        'Goal: simply keep your eyes open and look at the checkerboard while it is ' ...
+        'on screen, and rest your eyes on the + cross in between. No response or ' ...
+        'button press is needed -- just watch and stay still.\n\n' ...
+        'Press SPACE when you are ready to begin.'];
+    if ptb_show_instructions(win, instructions)
+        return
     end
 
     t0 = ptb_wait_for_trigger(win, opt.TriggerKey, 'Waiting for scanner trigger...');

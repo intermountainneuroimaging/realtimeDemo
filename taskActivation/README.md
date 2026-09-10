@@ -84,7 +84,7 @@ own `conf/*.toml` instead of the default:
 ```bash
 ./quickstart.sh motor          # LEFT vs RIGHT finger tapping
 ./quickstart.sh checkerboard   # flickering checkerboard ON vs OFF
-./quickstart.sh gambling       # gambling WIN (reward) vs LOSS (punishment)
+./quickstart.sh gambling       # blackjack WIN vs LOSE (tie as covariate)
 ```
 
 Add `--run`/`-r <N>` (either before or after the task name, or on its own with
@@ -100,7 +100,7 @@ handy for bridging/streaming a different run each session:
 |---|---|---|---|---|
 | Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_finger` vs `right_finger` | `stimuli_ptb/motor_task.m` or `stimuli/generic_motor_task.py` |
 | Checkerboard | `checkerboard.toml` | `Checkerboard_events.tsv` | `checkerboard` vs *(empty — beta map, i.e. vs the implicit rest/OFF baseline)* | `stimuli_ptb/checkerboard_task.m` |
-| Gambling | `gambling.toml` | `HcpGambling_acq-ap_events.tsv` | `reward` vs `punishment` | `stimuli_ptb/gambling_task.m` |
+| Gambling (blackjack) | `gambling.toml` | `Blackjack_events.tsv` | `win` vs `lose` (`tie` as covariate) | `stimuli_ptb/blackjack_task.m` or `stimuli/blackjack_task.py` |
 
 `run_task.py` is the thing actually doing the selection (`quickstart.sh
 <task>` just forwards to it inside the container) — it's a thin wrapper
