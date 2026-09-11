@@ -365,12 +365,13 @@ taskActivation/
 │   ├── taskActivation.toml   # default/example config: HcpMotor (left_hand vs right_hand)
 │   ├── motor.toml            # LEFT vs RIGHT finger tapping (GenericMotorLR_events.tsv)
 │   ├── checkerboard.toml     # flickering checkerboard ON vs OFF (Checkerboard_events.tsv)
-│   └── gambling.toml         # gambling WIN (reward) vs LOSS (punishment) (HcpGambling_acq-ap_events.tsv)
+│   └── gambling.toml         # blackjack WIN vs LOSE, tie as covariate (Blackjack_events.tsv)
 ├── study_design/
 │   ├── HcpMotor_acq-ap_events.tsv     # real ds000244 HcpMotor events (drives conf/taskActivation.toml)
 │   ├── GenericMotorLR_events.tsv      # this project's own LEFT/RIGHT-finger design (conf/motor.toml)
 │   ├── Checkerboard_events.tsv        # this project's own ON/OFF checkerboard design (conf/checkerboard.toml)
-│   └── HcpGambling_acq-ap_events.tsv  # real ds000244 HcpGambling events (conf/gambling.toml)
+│   ├── Blackjack_events.tsv           # this project's own hit/stay blackjack design (conf/gambling.toml)
+│   └── HcpGambling_acq-ap_events.tsv  # real ds000244 HcpGambling events (tutorial/'s offline validation only)
 ├── templates/                 # anonymized Enhanced multi-frame DICOM header for mock_scanner
 ├── dicomDir/                  # scanner DICOMs
 ├── utils/                     # everything taskActivation.py imports or that supports a live deployment
@@ -388,13 +389,15 @@ taskActivation/
 │   ├── common.py                    # shared trigger-wait / event-loop / timing-log helpers
 │   ├── hcp_motor_task.py            # presents the HcpMotor task (left/right hand, foot, tongue)
 │   ├── generic_motor_task.py        # presents this project's own LEFT/RIGHT-finger design (conf/motor.toml)
-│   ├── hcp_gambling_task.py         # presents the HcpGambling task (reward/punishment/neutral)
+│   ├── blackjack_task.py            # presents this project's own hit/stay blackjack design (conf/gambling.toml)
+│   ├── hcp_gambling_task.py         # presents the original HcpGambling task (reward/punishment/neutral)
 │   ├── test_psychopy_install.py     # standalone smoke test for the PsychoPy install itself
 │   └── logs/                        # per-session timing-accuracy logs (gitignored)
-├── stimuli_ptb/                # Psychtoolbox (MATLAB) presentation of all three ready-made tasks
+├── stimuli_ptb/                # Psychtoolbox (MATLAB) presentation of the ready-made tasks
 │   ├── README.md                    # install/test Psychtoolbox, setup, running
-│   ├── motor_task.m, checkerboard_task.m, gambling_task.m   # the three task scripts
-│   ├── ptb_*.m                      # shared helpers (window setup, KbQueue, event-loop, logging)
+│   ├── motor_task.m, checkerboard_task.m, blackjack_task.m   # the three deployed task scripts
+│   ├── gambling_task.m              # the original HcpGambling card-guess task (not deployed to any conf/*.toml)
+│   ├── ptb_*.m                      # shared helpers (window setup, KbQueue, event-loop, instructions, logging)
 │   ├── test_ptb_install.m           # standalone smoke test for the Psychtoolbox install itself
 │   └── logs/                        # per-session timing-accuracy logs (gitignored)
 └── tutorial/                  # offline HCP-data validation of this analysis, no scanner needed

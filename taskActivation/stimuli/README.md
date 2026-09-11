@@ -109,7 +109,10 @@ All four:
 - `generic_motor_task.py` and `blackjack_task.py` **show a task-instructions
   screen first** — a brief description of the task and the subject's goal,
   dismissed with SPACE (or Escape to abort before the run even starts) —
-  see `common.show_instructions()` below.
+  see `common.show_instructions()` below. It measures the real rendered
+  text (`TextStim.boundingBox`) against the real window size and shrinks
+  the font until the whole block fits, so the instructions stay fully
+  visible at whatever resolution the window actually opens at.
 - **Wait for a scanner trigger** before starting (`--trigger-key`, default
   `5,t` — wire the scanner's sync pulse to send one of these, or press it
   yourself on the keyboard to test without a scanner). Every event is then
@@ -140,16 +143,37 @@ blocks between them (no get-ready cue -- rest doubles as the lead-in).
 Matches `conf/motor.toml`'s `glmCondA=left_finger` / `glmCondB=right_finger`
 contrast for live analysis.
 
-**`blackjack_task.py`** — each trial deals two cards face-up (never a
-natural blackjack -- an Ace paired with a 10-value card is never dealt as
-the opening hand); press **1 = HIT** (deal another card) or **2 = STAY**
-(freeze the hand) during a brief decision window, then the outcome is
-revealed: green `WIN +$1.00`, red `LOSE −$0.50`, or gray `TIE $0.00` -- or
-gray "No response `$0.00`" if nothing was pressed in time. The dealt cards
-and the hit/stay choice are purely cosmetic and never change the outcome --
-which outcome appears and when is entirely driven by the events.tsv, so it
-matches `taskActivation.py`'s `glmCondA=win` / `glmCondB=lose` contrast with
-`tie` as a covariate. Unlike the other scripts here, it uses its own
+**`blackjack_task.py`** — each 3.0s trial deals two cards face-up, with a
+value that fits the trial's own pre-scripted outcome (see
+`deal_initial_hand()`): never a natural blackjack (an Ace paired with a
+10-value card, value 21) on any trial; on `lose` specifically, no card is
+ever an Ace at all and the value is 12-20 (never an implausible
+near-certain loss, never already busted); on `win`, the value is 16-20 or
+under 10 (never the awkward 10-15 middle); `tie` is otherwise
+unconstrained. Press **1 = HIT** or **2 = STAY**
+any time during a 2.0s decision window. Whichever comes first: the SAME
+instant you respond, HIT deals one more card -- chosen so it never busts
+the hand on a WIN or TIE trial, and never brings it to exactly 21 on a
+LOSE trial (see `deal_hit_card()`) -- and immediately reveals the outcome;
+STAY immediately reveals the outcome with your current hand -- no waiting
+out the rest of
+the decision window once you've answered. The outcome (shown for whatever
+time is left in the trial, at least 1.0s): green `WIN +$1.00`, gray
+`TIE $0.00`, or red `−$0.50` labeled `BUST` or `DEALER WON` -- `BUST` if the
+cosmetic hand's own blackjack value (standard scoring: number cards at face
+value, face cards worth 10, Aces worth 1 or 11) is over 21, otherwise
+`DEALER WON` -- or gray "No response `$0.00`" if nothing was pressed within
+the full 2.0s. The dealt cards and the hit/stay choice (and the BUST/DEALER
+WON message) are purely cosmetic and never change the outcome -- which outcome
+appears and when is entirely driven by the events.tsv, so it matches
+`taskActivation.py`'s `glmCondA=win` / `glmCondB=lose` contrast with `tie`
+as a covariate. The hand, prompt, and outcome text are each sized against
+the real window (see `common.fit_text_stim()`) and given their own
+non-overlapping vertical region, so nothing runs off-screen or overlaps at
+any resolution. Trials are separated by a variable inter-trial interval
+(jittered 1.0-3.0s, ~2s mean) of plain fixation, so the design isn't
+perfectly periodic. 58 trials (24 win / 24 lose / 10 tie), ~5 minutes
+total. Unlike the other scripts here, it uses its own
 per-frame render loop instead of `common.run_events()` (needed for the
 hit/stay key handling and a `response_key`/`response_time_s` log, mirroring
 `stimuli_ptb/blackjack_task.m`'s own reasons for not using its shared loop
@@ -166,7 +190,10 @@ offline validation.
 ## Files
 
 - `common.py` — shared helpers: `show_instructions()` (shows a task
-  description + goal screen, blocks for a continue keypress), `wait_for_trigger()`
+  description + goal screen, blocks for a continue keypress), `fit_text_stim()`
+  (shrinks a TextStim's height until it actually fits within a fraction of
+  the real window's width/height -- used by `show_instructions()` and by
+  `blackjack_task.py`'s hand/prompt/outcome text), `wait_for_trigger()`
   (blocks for the scanner sync pulse, returns a clock + trigger timestamp),
   `run_events()` (a single continuous render loop that shows the right
   stimulus for wherever you are in the events.tsv relative to that trigger,

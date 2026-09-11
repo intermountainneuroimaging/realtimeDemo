@@ -14,7 +14,7 @@ files so the real-time analysis assumes exactly what's actually presented.
 | Script | Events file | Design |
 |---|---|---|
 | `motor_task.m` | `../study_design/GenericMotorLR_events.tsv` | 30s LEFT FINGER / RIGHT FINGER tapping blocks separated by 10s REST blocks (3 reps each + trailing rest, 13 blocks / 250s) |
-| `blackjack_task.m` | `../study_design/Blackjack_events.tsv` | this project's own two-card blackjack design: hit(1)/stay(2) on a dealt hand, then a pre-scripted win / lose / tie outcome (same schedule as `HcpGambling_acq-ap_events.tsv`'s reward/punishment/neutral, just re-themed) |
+| `blackjack_task.m` | `../study_design/Blackjack_events.tsv` | this project's own two-card blackjack design: hit(1) or stay(2), any time in a 2.0s decision window, immediately reveals a pre-scripted win / lose / tie outcome (3.0s/trial), separated by a jittered 1.0-3.0s inter-trial interval -- 58 trials (24 win / 24 lose / 10 tie), ~5 minutes total |
 | `gambling_task.m` | `../study_design/HcpGambling_acq-ap_events.tsv` | the original HCP project's own card-guessing design, unchanged: reward / punishment / neutral -- kept as-is for `tutorial/`'s offline validation against the real ds000244 data |
 | `checkerboard_task.m` | `../study_design/Checkerboard_events.tsv` | 20s ON/OFF blocks: flickering full-contrast checkerboard vs fixation (6 reps + trailing rest, 13 blocks / 260s) |
 
@@ -60,13 +60,13 @@ own timing lined up with the actual press. The **same** per-frame check also
 catches Escape (rather than a second, separately-fallible `KbCheck` call),
 so an abort can't be missed for the same reason a response can't.
 
-Each trial's response(s) are written into the timing log's `response_key` /
+Each trial's response is written into the timing log's `response_key` /
 `response_time_s` columns (`'none'` / `NaN` if the subject didn't respond in
-time). For `gambling_task.m` that's the single guess keypress; for
-`blackjack_task.m` it's the full hit/stay sequence for that trial (e.g.
-`"1;1;2"`) and the time of the last one. Either way, the response never
-changes the outcome — as in the real HCP task, which outcome appears and
-when is entirely driven by the events.tsv.
+time) -- `gambling_task.m`'s guess keypress, or `blackjack_task.m`'s single
+hit/stay press (whichever comes first ends that trial's decision phase
+immediately -- see "What each task looks like" below). Either way, the
+response never changes the outcome — as in the real HCP task, which outcome
+appears and when is entirely driven by the events.tsv.
 
 `motor_task.m` and `checkerboard_task.m` don't collect responses at all (pure
 block presentation), so they don't use a `KbQueue` — Escape is checked with a
@@ -85,6 +85,17 @@ else here — see above), or returns early if Escape is pressed so the
 caller can abort before the run even starts. The instructions text itself
 is a fixed string in each task script, not a configurable option — edit it
 directly there if you want different wording for your site.
+
+**Fits the real window, at any resolution:** rather than a fixed font size
+that only happens to fit at whatever resolution it was eyeballed on,
+`ptb_show_instructions.m` uses the shared `ptb_fit_text_size.m` to measure
+the real window (`Screen('Rect')`) and the real rendered text
+(`DrawFormattedText`'s `DoDraw=0` "measure only" mode) and shrink the font
+until the whole block fits, before actually drawing it — so the full
+instructions stay visible whether this is fullscreen on a scanner-room
+projector or the small 1024×768 `'Windowed'` test window. `blackjack_task.m`
+uses the same helper for its card hand, "1 = HIT / 2 = STAY" prompt, and
+outcome text — see its own entry in "What each task looks like" below.
 
 ## Screen / display setup
 
@@ -185,17 +196,33 @@ once, and pass whatever it prints via `'TriggerKey'` / `'ResponseKeys'`.
   — this project's own folder living under a cloud-synced Documents is fine
   (it's just `.m` source), the concern is specifically Psychtoolbox's own
   compiled binaries.
-- **Apple Silicon Macs (M1/M2/M3+):** `PTB-ERROR: SYNCHRONIZATION FAILURE`
-  when opening a window is expected, not a sign anything is broken —
-  Psychtoolbox's own startup warning says its timing/timestamping
-  mechanisms are unreliable on Apple's own GPU and that sync tests should
-  be expected to fail. Pass `'SkipSyncTests', true` to every task script to
-  get past it for local testing on a machine like this. **This is fine for
-  testing the task logic, but PTB's own docs call visual timing on these
-  Macs untrustworthy** — don't use an Apple Silicon Mac as the actual
-  stimulus computer for a real scanner session; use an Intel Mac, Windows,
-  or Linux machine there instead, with `SkipSyncTests` left `false` so real
-  timing problems on that machine aren't hidden.
+- **Apple Silicon Macs (M1/M2/M3+):** `SetupPsychtoolbox` itself can refuse
+  to finish — `Tried to setup on native Matlab or Octave for Apple Silicon
+  64-Bit ARM. This is not supported` (and, just before that, a harmless
+  `FAILED!` trying to strip the macOS quarantine flag from files that don't
+  exist yet because setup never got that far). This isn't a bug in this
+  project's scripts — Psychtoolbox ships no native arm64 `.mex` files at
+  all, only Intel/x86_64 ones, so it flatly refuses to install on a native
+  arm64 MATLAB or Octave. Fix by installing an **Intel (x86_64) build of
+  MATLAB** (download that variant directly from MathWorks, not the
+  Apple-Silicon/Universal one — it runs automatically under Rosetta 2) or
+  an Intel build of Octave (`arch -x86_64 /usr/local/bin/brew install
+  octave`, using an Intel Homebrew prefix), then re-run
+  `SetupPsychtoolbox` from **inside that Intel session**. Once it's
+  actually running under Rosetta 2, a *second*, different message —
+  `PTB-ERROR: SYNCHRONIZATION FAILURE` when opening a window — is expected,
+  not a sign anything is broken: Psychtoolbox's own startup warning says
+  its timing/timestamping mechanisms are unreliable on Apple's own GPU and
+  that sync tests should be expected to fail there. Pass `'SkipSyncTests',
+  true` to every task script to get past that for local testing. **This is
+  fine for testing the task logic, but PTB's own docs call visual timing on
+  these Macs untrustworthy either way** — don't use an Apple Silicon Mac as
+  the actual stimulus computer for a real scanner session; use an Intel
+  Mac, Windows, or Linux machine there instead, with `SkipSyncTests` left
+  `false` so real timing problems on that machine aren't hidden. If you
+  just want to try out the task logic without fighting Rosetta/Intel-MATLAB
+  setup, the PsychoPy scripts in [`../stimuli/`](../stimuli/) are pure
+  Python and run natively on Apple Silicon with no such restriction.
 - **macOS:** keypresses not registering almost always means MATLAB needs
   **Accessibility** and/or **Input Monitoring** permission — System
   Settings → Privacy & Security.
@@ -248,17 +275,39 @@ movement blocks; plain fixation (`+`) during rest. Matches
 `taskActivation.py`'s `glmCondA=left_finger` / `glmCondB=right_finger`
 contrast when the toml is pointed at `GenericMotorLR_events.tsv`.
 
-**`blackjack_task.m`** — each trial deals two cards face-up (never a natural
-blackjack — an Ace paired with a 10-value card is never dealt as the
-opening hand); the subject may press **1 = HIT** (deal another card) or
-**2 = STAY** (freeze the hand) during a brief decision window, then the
-outcome is revealed: green `WIN +$1.00`, red `LOSE −$0.50`, or gray
-`TIE $0.00` — or gray "No response `$0.00`" if the subject never pressed
-anything, regardless of what the trial was scheduled to pay out (an
-incentive to actually respond; the events.tsv / GLM design are unaffected).
-The dealt cards and the hit/stay choice are purely cosmetic and never change
-the outcome — matches `taskActivation.py`'s `glmCondA=win` / `glmCondB=lose`
-contrast with `tie` as a covariate.
+**`blackjack_task.m`** — each 3.0s trial deals two cards face-up, with a
+value that fits the trial's own pre-scripted outcome (see
+`deal_initial_hand()`): never a natural blackjack (an Ace paired with a
+10-value card, value 21) on any trial; on `lose` specifically, no card is
+ever an Ace at all and the value is 12-20 (never an implausible
+near-certain loss, never already busted); on `win`, the value is 16-20 or
+under 10 (never the awkward 10-15 middle); `tie` is otherwise
+unconstrained. The subject may press **1 = HIT**
+or **2 = STAY** any time during a 2.0s decision window. Whichever comes
+first: the SAME instant the subject responds, HIT deals one more card --
+chosen so it never busts the hand on a WIN or TIE trial, and never brings
+it to exactly 21 on a LOSE trial (see `deal_hit_card()`) -- and immediately
+reveals the outcome; STAY immediately reveals the outcome with the current
+hand — no
+waiting out the rest of the decision window once an answer is given. The
+outcome (shown for whatever time is left in the trial, at least 1.0s):
+green `WIN +$1.00`, gray `TIE $0.00`, or red `−$0.50` labeled `BUST` or
+`DEALER WON` — `BUST` if the cosmetic hand's own blackjack value (standard
+scoring: number cards at face value, face cards worth 10, Aces worth 1 or
+11) is over 21, otherwise `DEALER WON` — or gray "No response `$0.00`" if nothing
+was pressed within the full 2.0s, regardless of what the trial was
+scheduled to pay out (an incentive to actually respond; the events.tsv /
+GLM design are unaffected). The dealt cards and the hit/stay choice (and
+the BUST/DEALER WON message) are purely cosmetic and never change the
+outcome —
+matches `taskActivation.py`'s `glmCondA=win` / `glmCondB=lose` contrast
+with `tie` as a covariate. The hand, prompt, and outcome text are each
+sized against the real window (see `ptb_fit_text_size.m`) and given their
+own non-overlapping vertical region, so nothing runs off-screen or overlaps
+at any resolution, whether the hand has two cards or three. Trials are
+separated by a variable inter-trial interval (jittered 1.0-3.0s, ~2s mean)
+of plain fixation, so the design isn't perfectly periodic. 58 trials (24
+win / 24 lose / 10 tie), ~5 minutes total.
 
 **`gambling_task.m`** — the original HCP card-guessing task, unchanged: each
 trial briefly shows a face-down card ("Higher or Lower? press any button"),
@@ -289,6 +338,10 @@ plain fixation during OFF blocks. Matches `taskActivation.py`'s
 - `ptb_show_instructions.m` — shows the task-instructions screen (see
   above) and blocks until a continue key (or Escape) is pressed, via the
   same KbQueue mechanism.
+- `ptb_fit_text_size.m` — finds a font size + wrap-at that makes a piece of
+  text actually fit within a fraction of the real window's width/height
+  (see "Fits the real window, at any resolution" above); shared by
+  `ptb_show_instructions.m` and `blackjack_task.m`.
 - `ptb_run_block_loop.m` — the render loop `motor_task.m` /
   `checkerboard_task.m` share: draws whatever the caller's `stimFor`
   callback returns for the current time, handles rest gaps, writes the

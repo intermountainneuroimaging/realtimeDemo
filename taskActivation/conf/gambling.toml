@@ -2,15 +2,15 @@
 #
 # Real-time, registration-free reward-processing mapping, streaming DICOMs
 # from a real (or mock) scanner via dicomDir/. This project's own two-card
-# blackjack design (win/tie/lose) -- the same timing/outcome schedule as the
-# original ds000244 (Individual Brain Charting) "HcpGambling" task, just
-# re-themed as a hit(1)/stay(2) card game (win<-reward, lose<-punishment,
-# tie<-neutral). See study_design/Blackjack_events.tsv. Pairs with
+# blackjack design (win/tie/lose): a hit(1)/stay(2) card game, 58 trials
+# (24 win / 24 lose / 10 tie) each a fixed 3.0s (2.0s decision + 1.0s
+# outcome), separated by a variable 1.0-3.0s jittered inter-trial interval
+# -- ~5 minutes total. See study_design/Blackjack_events.tsv. Pairs with
 # stimuli_ptb/blackjack_task.m (Psychtoolbox) or the PsychoPy
-# stimuli/blackjack_task.py. The original card-guess presentation
-# (gambling_task.m / hcp_gambling_task.py, HcpGambling_acq-ap_events.tsv) is
-# untouched and still used by tutorial/'s offline validation against the
-# real ds000244 data.
+# stimuli/blackjack_task.py. The original HCP
+# card-guess presentation (gambling_task.m / hcp_gambling_task.py,
+# HcpGambling_acq-ap_events.tsv, a different timing design) is untouched and
+# still used by tutorial/'s offline validation against the real ds000244 data.
 #
 # Run: python run_task.py gambling   (see ../run_task.py / ../quickstart.sh gambling)
 
@@ -81,7 +81,7 @@ plotTitle = 'Blackjack (WIN-ROI minus LOSE-ROI, % signal change)'
 plotXLabel = 'volume #'
 plotYLabel = 'WIN - LOSE % signal change'
 plotXRangeLow = 0
-plotXRangeHigh = 180       # rough (~345s design / ~TR=2s); the analysis itself uses the
+plotXRangeHigh = 150       # rough (296s design / ~TR=2s); the analysis itself uses the
                            # real inferred TR regardless -- this only sizes the web widget
 plotYRangeLow = -2
 plotYRangeHigh = 2

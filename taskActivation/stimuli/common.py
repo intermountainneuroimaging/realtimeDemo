@@ -24,14 +24,55 @@ import rt_analysis as mrt  # noqa: E402 -- import after the sys.path setup above
 read_events_tsv = mrt.read_events_tsv  # re-exported for convenience
 
 
+def fit_text_stim(win, stim, base_height, max_w_frac=0.85, max_h_frac=0.85,
+                  min_height=0.02, height_step=0.003):
+    """Set `stim.height = base_height`, then shrink it until the REAL
+    rendered text (PsychoPy's own TextStim.boundingBox, in pixels) fits
+    within max_w_frac/max_h_frac of the window's REAL size (win.size, in
+    pixels) -- rather than a fixed font height that only happens to fit at
+    whatever resolution it was eyeballed on. Always resets to `base_height`
+    first, so a stim shrunk for a long piece of text (e.g. a 3-card hand)
+    isn't stuck small once its text gets shorter again (e.g. back to 2
+    cards next trial). Call this any time `stim.text` changes to something
+    that might not fit -- not just once at creation.
+
+    Calls `stim.draw()` after every height change: PsychoPy's TextStim only
+    recomputes `.boundingBox` on an actual draw (or at construction, if
+    `height=` was already passed in) -- plain `stim.height = ...` alone
+    leaves `.boundingBox` stale, which would otherwise make the fit loop
+    below see the WRONG (previous) size and never converge. These draws
+    only touch the not-yet-flipped back buffer, so `win.clearBuffer()`
+    wipes them before returning -- the caller's own subsequent draw()+flip()
+    is unaffected."""
+    win_w_px, win_h_px = win.size
+    target_w_px = max_w_frac * win_w_px
+    target_h_px = max_h_frac * win_h_px
+    stim.height = base_height
+    stim.draw()
+    while stim.height > min_height and (stim.boundingBox[0] > target_w_px
+                                        or stim.boundingBox[1] > target_h_px):
+        stim.height -= height_step
+        stim.draw()
+    win.clearBuffer()
+
+
 def show_instructions(win, text, continue_keys=('space', 'escape')):
     """Show a task-instructions screen (task description + the subject's
     goal) and block until a continue key is pressed -- shown before
     wait_for_trigger()'s own "Waiting for scanner..." screen, so the subject
     sees what they're about to do before the run starts. Returns True if
-    Escape was pressed instead of continuing (caller should return early)."""
+    Escape was pressed instead of continuing (caller should return early).
+
+    FITS THE ACTUAL WINDOW, AT ANY RESOLUTION -- see fit_text_stim() above.
+    """
     from psychopy import visual, event
-    msg = visual.TextStim(win, text=text, color='white', height=0.05, wrapWidth=1.6)
+    win_w_px, win_h_px = win.size
+    aspect = win_w_px / win_h_px    # 'height' units: window spans -aspect/2..+aspect/2 wide
+    wrap_width = min(1.6, 0.82 * aspect)   # never wrap wider than this window actually is
+
+    msg = visual.TextStim(win, text=text, color='white', wrapWidth=wrap_width)
+    fit_text_stim(win, msg, base_height=0.05, max_w_frac=0.82, max_h_frac=0.85)
+
     msg.draw()
     win.flip()
     keys = event.waitKeys(keyList=list(continue_keys))
