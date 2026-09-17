@@ -7,14 +7,18 @@ live analysis reads via conf/checkerboard_lr.toml). The Psychtoolbox
 equivalent is stimuli_ptb/checkerboard_lr_task.m -- both present the exact
 same events.tsv.
 
-A full-contrast checkerboard patch flickers ON/OFF (fully visible, then
-fully blank -- NOT the phase-reversal black<->white flip checkerboard_task.py
-uses) at --flicker-hz, shown in one of three screen positions per block:
-CENTER, LEFT, or RIGHT. A small + fixation cross stays visible at screen
-center THROUGHOUT every block (including LEFT/RIGHT, and the OFF half of
-every flicker cycle), so the subject can hold central gaze while the
-checkerboard stimulates each position -- standard practice for a peripheral
-visual localizer, so the resulting activation reflects retinotopic stimulus
+A full-contrast checkerboard BAR (full window height, a fraction of the
+window width) flickers in one of three screen positions per block: CENTER,
+LEFT, or RIGHT -- the same OFF (blank) -> ON (pattern A) -> OFF -> ON
+(pattern B, the black<->white inverse of A) -> repeat flicker
+checkerboard_task.py uses, at --flicker-hz. LEFT is anchored flush against
+the window's left edge and RIGHT flush against its right edge (not floating
+with a gap), so the two peripheral bars sit as far into the visual
+periphery as the window allows. A small + fixation cross stays visible at
+screen center THROUGHOUT every block (including LEFT/RIGHT, and every OFF
+phase), so the subject can hold central gaze while the checkerboard
+stimulates each position -- standard practice for a peripheral visual
+localizer, so the resulting activation reflects retinotopic stimulus
 location rather than eye movements.
 
 Blocks: rest / center / rest / left / rest / right, x4 reps + a trailing
@@ -43,58 +47,69 @@ DEFAULT_EVENTS = os.path.join(common.PROJECT_ROOT, 'study_design', 'Checkerboard
 
 
 class _CenterLeftRightStim:
-    """Draws the (possibly None) checker patch for this frame, THEN the
+    """Draws the (possibly None) checker bar for this frame, THEN the
     fixation cross on top -- fixation must stay visible on EVERY frame of
     EVERY condition (see the module docstring), so a single stim_for()
     return value has to combine both rather than picking one or the other
     like the plain checkerboard_task.py / generic_motor_task.py do."""
-    def __init__(self, checker, show_checker, fixation):
+    def __init__(self, checker, fixation):
         self.checker = checker
-        self.show_checker = show_checker
         self.fixation = fixation
 
     def draw(self):
-        if self.checker is not None and self.show_checker:
+        if self.checker is not None:
             self.checker.draw()
         self.fixation.draw()
 
 
-def build_checker_stims(win, n_squares=8, center_fraction=0.45, side_fraction=0.40, margin_frac=0.04):
-    """Build one checkerboard GratingStim per position (center/left/right),
-    sized and placed as fractions of the window -- mirrors
-    checkerboard_lr_task.m's pixel-level destRects, but in PsychoPy
-    'height' units (window height = 1.0, width = aspect) so it scales to
-    any window size the same way the rest of this project's PsychoPy stims
-    do. side_fraction is still smaller than center_fraction so a LEFT/RIGHT
-    patch fits inside the outer screen thirds without clipping, matching
-    the .m version.
+def build_checker_stims(win, n_squares=8, center_width_frac=0.36, side_width_frac=0.32):
+    """Build the two phase-inverted checkerboard BAR GratingStims (pattern A
+    / pattern B -- see the module docstring's OFF/A/OFF/B flicker) for each
+    position (center/left/right), sized and placed as fractions of the
+    window -- mirrors checkerboard_lr_task.m's pixel-level destRects, but
+    in PsychoPy 'height' units (window height = 1.0, width = aspect) so it
+    scales to any window size the same way the rest of this project's
+    PsychoPy stims do.
+
+    Each bar spans the FULL window height (a vertical bar, not a square
+    patch) and is only *_width_frac* of the window wide. LEFT sits flush
+    against the window's left edge and RIGHT flush against its right edge
+    (no gap/margin) so each reaches as far into the periphery as the window
+    allows; CENTER stays horizontally centered. side_width_frac is still
+    smaller than center_width_frac, matching the .m version.
+
+    Returns {'center': {'A': stim, 'B': stim}, 'left': {...}, 'right': {...}}.
 
     n_squares MUST be a power of two (default 8): PsychoPy's GratingStim
     texture upload requires a square power-of-two array on some OpenGL
     backends (older/software renderers without the
     GL_ARB_texture_non_power_of_two extension) -- an arbitrary size like 6
     logs a "Requiring a square power of two texture" error and silently
-    fails to render correctly."""
+    fails to render correctly. The array itself stays square even though
+    the bar it's stretched into isn't -- same as checkerboard_task.py's
+    tex_on/tex_off -- so the checker cells appear as tall rectangles rather
+    than squares, which is expected for a bar shape."""
     from psychopy import visual
     win_w_px, win_h_px = win.size
-    aspect = win_w_px / win_h_px
-    short_side = min(1.0, aspect)
+    aspect = win_w_px / win_h_px   # window width in 'height' units
 
     checker = np.indices((n_squares, n_squares)).sum(axis=0) % 2
     checker = checker.astype(float) * 2 - 1
+    checker_inv = -checker
+    bar_height = 1.0   # full window height
 
-    patch_size_center = center_fraction * short_side
-    patch_size_side = side_fraction * short_side
-    margin = margin_frac * aspect   # aspect == window width in 'height' units
-
-    def make(pos, size):
-        return visual.GratingStim(win, tex=checker, mask=None, size=(size, size),
+    def make(pos, width, arr):
+        return visual.GratingStim(win, tex=arr, mask=None, size=(width, bar_height),
                                   pos=pos, units='height', interpolate=False)
 
+    positions = {
+        'center': (0.0, center_width_frac),
+        'left': (-aspect / 2 + side_width_frac / 2, side_width_frac),
+        'right': (aspect / 2 - side_width_frac / 2, side_width_frac),
+    }
     return {
-        'center': make((0, 0), patch_size_center),
-        'left': make((-aspect / 2 + margin + patch_size_side / 2, 0), patch_size_side),
-        'right': make((aspect / 2 - margin - patch_size_side / 2, 0), patch_size_side),
+        key: {'A': make((x, 0), width, checker), 'B': make((x, 0), width, checker_inv)}
+        for key, (x, width) in positions.items()
     }
 
 
@@ -108,12 +123,11 @@ def main():
     ap.add_argument('--duration', type=float, default=None,
                     help='total run length in seconds (default: end of the last event); '
                          'pass nVols*TR to also show trailing rest')
-    ap.add_argument('--flicker-hz', type=float, default=4.0,
-                    help='ON/OFF flicker rate, i.e. how many times per second the checkerboard '
-                         'toggles fully visible <-> fully blank (default 4 -- half the '
-                         'pattern-reversal rate checkerboard_task.py uses, since a full on/off '
-                         'cycle here is twice as long as one reversal there for the same '
-                         'perceived flicker rate)')
+    ap.add_argument('--flicker-hz', type=float, default=8.0,
+                    help='how many times per second the checkerboard changes state during a '
+                         'CENTER/LEFT/RIGHT block (default 8): OFF (blank) -> ON (pattern A) -> '
+                         'OFF -> ON (pattern B, the black<->white inverse of A) -> repeat, each '
+                         'state lasting 1/flicker_hz -- same semantics as checkerboard_task.py')
     ap.add_argument('--windowed', action='store_true', help='windowed instead of fullscreen')
     ap.add_argument('--log', default=None,
                     help='timing log path (default: stimuli/logs/checkerboard_lr_<timestamp>.tsv)')
@@ -135,12 +149,19 @@ def main():
     flicker_hz = args.flicker_hz
 
     def stim_for(trial_type, t_in_event, duration):
-        checker = checker_stims.get(trial_type)
-        # ON/OFF: show the checkerboard for the first half of each flicker
-        # cycle, nothing (just the fixation cross) for the second half --
-        # a true on/off flicker, not a black<->white pattern reversal.
-        show = checker is not None and int(t_in_event * flicker_hz * 2) % 2 == 0
-        return _CenterLeftRightStim(checker, show, fixation)
+        # True flicker: fully OFF (blank) between each ON flash, and the
+        # flash itself alternates pattern A/B (black<->white inverse) so a
+        # given screen location genuinely reverses polarity from one flash
+        # to the next -- same 4-phase cycle as checkerboard_task.py.
+        entry = checker_stims.get(trial_type)
+        stim = None
+        if entry is not None:
+            phase = int(t_in_event * flicker_hz) % 4
+            if phase == 1:
+                stim = entry['A']
+            elif phase == 3:
+                stim = entry['B']
+        return _CenterLeftRightStim(stim, fixation)
 
     instructions = (
         "CHECKERBOARD LOCALIZER TASK\n\n"

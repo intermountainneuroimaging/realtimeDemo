@@ -25,8 +25,8 @@ the analysis assumes happened, by construction.
 |---|---|---|
 | `hcp_motor_task.py` | `../study_design/HcpMotor_acq-ap_events.tsv` | left/right hand, left/right foot, tongue (each with a brief get-ready cue) |
 | `generic_motor_task.py` | `../study_design/GenericMotorLR_events.tsv` | this project's own left/right finger-tapping design (`conf/motor.toml`) -- 30s tapping blocks separated by 10s rest, no get-ready cues; the Psychtoolbox equivalent is `../stimuli_ptb/motor_task.m` |
-| `checkerboard_task.py` | `../study_design/Checkerboard_events.tsv` | this project's own flickering-checkerboard ON/OFF localizer (`conf/checkerboard.toml`) -- 20s ON/OFF blocks, true black<->white pattern-reversal flicker; the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_task.m` |
-| `checkerboard_lr_task.py` | `../study_design/CheckerboardLR_events.tsv` | this project's own 3-position checkerboard localizer (`conf/checkerboard_lr.toml`) -- center/left/right on-screen positions, true on/off flicker (not pattern-reversal), 3-way one-vs-rest GLM contrast; the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_lr_task.m` |
+| `checkerboard_task.py` | `../study_design/Checkerboard_events.tsv` | this project's own flickering-checkerboard ON/OFF localizer (`conf/checkerboard.toml`) -- 20s ON/OFF blocks, genuine OFF/pattern-A/OFF/pattern-B flicker (not two patterns swapped with no blank); the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_task.m` |
+| `checkerboard_lr_task.py` | `../study_design/CheckerboardLR_events.tsv` | this project's own 3-position checkerboard localizer (`conf/checkerboard_lr.toml`) -- center/left/right full-height bars (LEFT/RIGHT flush to the screen edge), same OFF/A/OFF/B flicker as `checkerboard_task.py`, 3-way one-vs-rest GLM contrast; the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_lr_task.m` |
 | `blackjack_task.py` | `../study_design/Blackjack_events.tsv` | this project's own two-card blackjack design (`conf/gambling.toml`) -- hit(1)/stay(2) on a dealt hand, then a pre-scripted win/lose/tie outcome; the Psychtoolbox equivalent is `../stimuli_ptb/blackjack_task.m` |
 | `hcp_gambling_task.py` | `../study_design/HcpGambling_acq-ap_events.tsv` | the original HCP card-guess task, unchanged: reward, punishment, neutral -- kept as-is for `tutorial/`'s offline validation against the real ds000244 data; not wired to any `conf/*.toml` contrast anymore |
 
@@ -153,24 +153,30 @@ Matches `conf/motor.toml`'s `glmCondA=left_finger` / `glmCondB=right_finger`
 contrast for live analysis.
 
 **`checkerboard_task.py`** — a flickering black<->white checkerboard patch
-centered on screen during 20s ON blocks (true pattern-reversal flicker,
-`--flicker-hz`, default 8: the two phase-inverted textures swap, not an
-on/off blink), alternating with plain fixation (`+`) during 20s OFF/rest
-blocks; 6 reps + a trailing rest block, 260s total. Matches
-`conf/checkerboard.toml`'s `glmCondA=checkerboard` / `glmCondB=''` (ON vs
-the implicit rest baseline) contrast for live analysis. The Psychtoolbox
-equivalent is `../stimuli_ptb/checkerboard_task.m`.
+centered on screen during 20s ON blocks: a genuine flicker (`--flicker-hz`,
+default 8) that goes OFF (blank) -> ON (pattern A) -> OFF -> ON (pattern B,
+the black<->white inverse of A) -> repeat, each state lasting
+1/flicker_hz -- so a given screen location truly cycles black -> white ->
+black, rather than swapping directly between two checkerboards with no
+blank in between (which can look like a static image). Alternates with
+plain fixation (`+`) during 20s OFF/rest blocks; 6 reps + a trailing rest
+block, 260s total. Matches `conf/checkerboard.toml`'s
+`glmCondA=checkerboard` / `glmCondB=''` (ON vs the implicit rest baseline)
+contrast for live analysis. The Psychtoolbox equivalent is
+`../stimuli_ptb/checkerboard_task.m`.
 
-**`checkerboard_lr_task.py`** — the same flickering checkerboard, but a
-true on/off flicker (`--flicker-hz`, default 4: the SAME patch toggles
-fully visible <-> fully blank, not a pattern reversal) shown in one of
-three screen positions per 12s block: CENTER, LEFT, or RIGHT. A `+`
-fixation cross stays visible on **every** frame of **every** condition
-(including rest, and the OFF half of each flicker cycle) so the subject
-can hold central gaze while LEFT/RIGHT stimulate the visual periphery.
-25 blocks (rest/center/rest/left/rest/right x4 + trailing rest), 300s
-total. Matches `conf/checkerboard_lr.toml`'s 3-way one-vs-rest GLM
-contrast (`glmCondA=center` / `glmCondB=left` / `glmCondC=right`, each
+**`checkerboard_lr_task.py`** — the same OFF/A/OFF/B flicker as
+`checkerboard_task.py` (`--flicker-hz`, default 8), but as a full-height
+BAR (not a square patch) shown in one of three screen positions per 12s
+block: CENTER, LEFT, or RIGHT. LEFT is anchored flush against the window's
+left edge and RIGHT flush against its right edge (no gap), so each bar
+reaches as far into the periphery as the window allows; CENTER stays
+horizontally centered. A `+` fixation cross stays visible on **every**
+frame of **every** condition (including rest, and every OFF phase) so the
+subject can hold central gaze while LEFT/RIGHT stimulate the visual
+periphery. 25 blocks (rest/center/rest/left/rest/right x4 + trailing
+rest), 300s total. Matches `conf/checkerboard_lr.toml`'s 3-way one-vs-rest
+GLM contrast (`glmCondA=center` / `glmCondB=left` / `glmCondC=right`, each
 contrasted against the mean of the other two) for live analysis. The
 Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_lr_task.m`.
 

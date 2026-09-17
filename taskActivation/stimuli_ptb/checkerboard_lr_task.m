@@ -1,15 +1,19 @@
 function checkerboard_lr_task(varargin)
 %CHECKERBOARD_LR_TASK Psychtoolbox presentation of a 3-position flickering-
-%   checkerboard visual localizer: a full-contrast checkerboard patch
-%   flickers ON/OFF (fully visible, then fully blank -- NOT the
-%   phase-reversal black<->white flip checkerboard_task.m uses) at
-%   'FlickerHz', shown in one of three screen positions per block: CENTER,
-%   LEFT, or RIGHT. A small + fixation cross stays visible at screen center
-%   THROUGHOUT every block (including LEFT/RIGHT, and the OFF half of every
-%   flicker cycle), so the subject can hold central gaze while the
-%   checkerboard stimulates each position -- standard practice for a
-%   peripheral visual localizer, so the resulting activation reflects
-%   retinotopic stimulus location rather than eye movements.
+%   checkerboard visual localizer: a full-contrast checkerboard BAR (full
+%   window height, a fraction of the window width) flickers in one of
+%   three screen positions per block: CENTER, LEFT, or RIGHT -- the same
+%   OFF (blank) -> ON (pattern A) -> OFF -> ON (pattern B, the
+%   black<->white inverse of A) -> repeat flicker checkerboard_task.m uses,
+%   at 'FlickerHz'. LEFT is anchored flush against the window's left edge
+%   and RIGHT flush against its right edge (not floating with a gap), so
+%   the two peripheral bars sit as far into the visual periphery as the
+%   window allows. A small + fixation cross stays visible at screen center
+%   THROUGHOUT every block (including LEFT/RIGHT, and every OFF phase), so
+%   the subject can hold central gaze while the checkerboard stimulates
+%   each position -- standard practice for a peripheral visual localizer,
+%   so the resulting activation reflects retinotopic stimulus location
+%   rather than eye movements.
 %
 %   Shows a brief task-instructions screen (dismiss with 1/2, or Escape to
 %   abort), waits for the scanner trigger, then presents
@@ -28,12 +32,12 @@ function checkerboard_lr_task(varargin)
 %     'EventsFile'    path to events.tsv (default: CheckerboardLR_events.tsv)
 %     'Duration'      total run length in seconds (default: end of the last
 %                     event); pass nVols*TR to also show trailing rest
-%     'FlickerHz'     ON/OFF flicker rate, i.e. how many times per second
-%                     the checkerboard toggles fully visible <-> fully
-%                     blank (default 4 -- half the pattern-reversal rate
-%                     checkerboard_task.m uses, since a full on/off cycle
-%                     here is twice as long as one reversal there for the
-%                     same perceived flicker rate)
+%     'FlickerHz'     how many times per second the checkerboard's state
+%                     changes during a CENTER/LEFT/RIGHT block (default 8):
+%                     OFF (blank) -> ON (pattern A) -> OFF -> ON (pattern
+%                     B, the black<->white inverse of A) -> repeat, each
+%                     state lasting 1/FlickerHz -- same semantics as
+%                     checkerboard_task.m
 %     'Windowed'      true for a windowed test window (default false)
 %     'ScreenWidth'   \
 %     'ScreenHeight'   } pixel resolution to open at, e.g. 1920/1080 for a
@@ -55,7 +59,7 @@ function checkerboard_lr_task(varargin)
     addParameter(p, 'TriggerKey', {'5', '5%', 't'});
     addParameter(p, 'EventsFile', fullfile(here, '..', 'study_design', 'CheckerboardLR_events.tsv'));
     addParameter(p, 'Duration', []);
-    addParameter(p, 'FlickerHz', 4);
+    addParameter(p, 'FlickerHz', 8);
     addParameter(p, 'Windowed', false);
     addParameter(p, 'ScreenWidth', []);
     addParameter(p, 'ScreenHeight', []);
@@ -81,44 +85,60 @@ function checkerboard_lr_task(varargin)
     cleanupWin = onCleanup(@() sca);   % guarantees the display is released on ANY exit --
                                        % normal completion, Escape-abort, or an uncaught error
 
-    % ---- build ONE checkerboard texture up front (ON/OFF flicker just
-    %      toggles whether it's drawn at all, unlike checkerboard_task.m's
-    %      two phase-inverted textures for a reversal flicker) ----
+    % ---- build the two phase-inverted checkerboard textures up front
+    %      (drawn every frame during ON flashes -- rebuilding per-frame
+    %      would needlessly cost time in the render loop). The SAME square
+    %      texture is reused for all 3 positions: DrawTexture stretches it
+    %      into whatever destRect is passed, so in a tall/narrow bar
+    %      destRect the checker cells appear as tall rectangles rather
+    %      than squares -- expected for a bar shape. ----
     squareSizePx = 40;
     [screenW, screenH] = Screen('WindowSize', win);
     shortSide = min(screenW, screenH);
 
-    centerFraction = 0.45;  % fraction of the screen's shorter dimension
-    sideFraction = 0.40;    % still smaller than centerFraction so a
-                            % LEFT/RIGHT patch fits inside the outer screen
-                            % thirds without clipping
-    nSquaresCenter = max(2, round(shortSide * centerFraction / squareSizePx));
-    patchSizeCenter = nSquaresCenter * squareSizePx;
-    [X, Y] = meshgrid(0:patchSizeCenter - 1, 0:patchSizeCenter - 1);
+    centerWidthFraction = 0.36;  % fraction of the screen's shorter
+                                 % dimension, used as bar WIDTH (bars span
+                                 % the full screen HEIGHT -- see destRects
+                                 % below)
+    sideWidthFraction = 0.32;    % still smaller than centerWidthFraction
+                                 % so LEFT/RIGHT stay visually distinct
+                                 % from CENTER
+    nSquares = max(2, round(shortSide * centerWidthFraction / squareSizePx));
+    patchPx = nSquares * squareSizePx;
+    [X, Y] = meshgrid(0:patchPx - 1, 0:patchPx - 1);
     checker = mod(floor(X / squareSizePx) + floor(Y / squareSizePx), 2);
     texChecker = Screen('MakeTexture', win, uint8(checker * 255));
+    texCheckerInv = Screen('MakeTexture', win, uint8((1 - checker) * 255));
 
-    patchSizeSide = max(2, round(shortSide * sideFraction / squareSizePx)) * squareSizePx;
-    margin = 0.04 * screenW;   % gap between the patch and the screen edge
+    barWidthCenter = shortSide * centerWidthFraction;
+    barWidthSide = shortSide * sideWidthFraction;
 
+    % Bars span the FULL window height; LEFT is anchored flush against the
+    % window's left edge and RIGHT flush against its right edge (no
+    % margin/gap), so each reaches as far into the periphery as the window
+    % allows. CENTER stays horizontally centered.
     destRects = struct( ...
-        'center', CenterRectOnPointd([0 0 patchSizeCenter patchSizeCenter], ...
+        'center', CenterRectOnPointd([0 0 barWidthCenter screenH], ...
             screenW / 2, screenH / 2), ...
-        'left', CenterRectOnPointd([0 0 patchSizeSide patchSizeSide], ...
-            margin + patchSizeSide / 2, screenH / 2), ...
-        'right', CenterRectOnPointd([0 0 patchSizeSide patchSizeSide], ...
-            screenW - margin - patchSizeSide / 2, screenH / 2));
+        'left', [0, 0, barWidthSide, screenH], ...
+        'right', [screenW - barWidthSide, 0, screenW, screenH]);
     flickerHz = opt.FlickerHz;
 
     function stimFor(win, trialType, tInEvent, ~)
         if isfield(destRects, trialType)
-            % ON/OFF: draw the checkerboard for the first half of each
-            % flicker cycle, nothing (just the fixation cross below) for
-            % the second half -- a true on/off flicker, not a
-            % black<->white pattern reversal.
-            if mod(floor(tInEvent * flickerHz * 2), 2) == 0
+            % True flicker: fully OFF (blank -- nothing drawn, so the
+            % window's black background shows through) between each ON
+            % flash, and the ON flash itself alternates pattern A/B
+            % (black<->white inverse) so a given screen location genuinely
+            % reverses polarity from one flash to the next -- same 4-phase
+            % cycle as checkerboard_task.m.
+            phase = mod(floor(tInEvent * flickerHz), 4);
+            if phase == 1
                 Screen('DrawTexture', win, texChecker, [], destRects.(trialType));
+            elseif phase == 3
+                Screen('DrawTexture', win, texCheckerInv, [], destRects.(trialType));
             end
+            % phase == 0 or 2: blank -- draw nothing.
         end
         % Fixation stays visible for EVERY frame of EVERY condition
         % (including rest) -- see the header comment on why: keeps gaze
