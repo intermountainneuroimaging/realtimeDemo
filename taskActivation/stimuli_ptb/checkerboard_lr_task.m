@@ -85,13 +85,14 @@ function checkerboard_lr_task(varargin)
     cleanupWin = onCleanup(@() sca);   % guarantees the display is released on ANY exit --
                                        % normal completion, Escape-abort, or an uncaught error
 
-    % ---- build the two phase-inverted checkerboard textures up front
-    %      (drawn every frame during ON flashes -- rebuilding per-frame
-    %      would needlessly cost time in the render loop). The SAME square
-    %      texture is reused for all 3 positions: DrawTexture stretches it
-    %      into whatever destRect is passed, so in a tall/narrow bar
-    %      destRect the checker cells appear as tall rectangles rather
-    %      than squares -- expected for a bar shape. ----
+    % ---- build the two phase-inverted checkerboard textures for CENTER
+    %      and for LEFT/RIGHT (which share the same width, so share one
+    %      texture pair) up front. Each texture's own pixel grid is sized
+    %      to match that bar's real width/height in squareSizePx cells, so
+    %      the checker cells are genuinely SQUARE regardless of how
+    %      narrow/tall the bar is -- rather than stretching one shared
+    %      square texture into a non-square destRect, which would elongate
+    %      the cells into tall rectangles. ----
     squareSizePx = 40;
     [screenW, screenH] = Screen('WindowSize', win);
     shortSide = min(screenW, screenH);
@@ -103,15 +104,23 @@ function checkerboard_lr_task(varargin)
     sideWidthFraction = 0.32;    % still smaller than centerWidthFraction
                                  % so LEFT/RIGHT stay visually distinct
                                  % from CENTER
-    nSquares = max(2, round(shortSide * centerWidthFraction / squareSizePx));
-    patchPx = nSquares * squareSizePx;
-    [X, Y] = meshgrid(0:patchPx - 1, 0:patchPx - 1);
-    checker = mod(floor(X / squareSizePx) + floor(Y / squareSizePx), 2);
-    texChecker = Screen('MakeTexture', win, uint8(checker * 255));
-    texCheckerInv = Screen('MakeTexture', win, uint8((1 - checker) * 255));
 
     barWidthCenter = shortSide * centerWidthFraction;
     barWidthSide = shortSide * sideWidthFraction;
+
+    nColsCenter = max(2, round(barWidthCenter / squareSizePx));
+    nColsSide = max(2, round(barWidthSide / squareSizePx));
+    nRows = max(2, round(screenH / squareSizePx));
+
+    [Xc, Yc] = meshgrid(0:nColsCenter - 1, 0:nRows - 1);
+    checkerCenter = mod(Xc + Yc, 2);
+    texCenterA = Screen('MakeTexture', win, uint8(checkerCenter * 255));
+    texCenterB = Screen('MakeTexture', win, uint8((1 - checkerCenter) * 255));
+
+    [Xs, Ys] = meshgrid(0:nColsSide - 1, 0:nRows - 1);
+    checkerSide = mod(Xs + Ys, 2);
+    texSideA = Screen('MakeTexture', win, uint8(checkerSide * 255));
+    texSideB = Screen('MakeTexture', win, uint8((1 - checkerSide) * 255));
 
     % Bars span the FULL window height; LEFT is anchored flush against the
     % window's left edge and RIGHT flush against its right edge (no
@@ -122,6 +131,9 @@ function checkerboard_lr_task(varargin)
             screenW / 2, screenH / 2), ...
         'left', [0, 0, barWidthSide, screenH], ...
         'right', [screenW - barWidthSide, 0, screenW, screenH]);
+
+    texA = struct('center', texCenterA, 'left', texSideA, 'right', texSideA);
+    texB = struct('center', texCenterB, 'left', texSideB, 'right', texSideB);
     flickerHz = opt.FlickerHz;
 
     function stimFor(win, trialType, tInEvent, ~)
@@ -134,9 +146,9 @@ function checkerboard_lr_task(varargin)
             % cycle as checkerboard_task.m.
             phase = mod(floor(tInEvent * flickerHz), 4);
             if phase == 1
-                Screen('DrawTexture', win, texChecker, [], destRects.(trialType));
+                Screen('DrawTexture', win, texA.(trialType), [], destRects.(trialType));
             elseif phase == 3
-                Screen('DrawTexture', win, texCheckerInv, [], destRects.(trialType));
+                Screen('DrawTexture', win, texB.(trialType), [], destRects.(trialType));
             end
             % phase == 0 or 2: blank -- draw nothing.
         end

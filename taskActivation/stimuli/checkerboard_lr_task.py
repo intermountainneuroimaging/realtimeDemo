@@ -62,7 +62,7 @@ class _CenterLeftRightStim:
         self.fixation.draw()
 
 
-def build_checker_stims(win, n_squares=8, center_width_frac=0.36, side_width_frac=0.32):
+def build_checker_stims(win, cells_across=8, center_width_frac=0.36, side_width_frac=0.32):
     """Build the two phase-inverted checkerboard BAR GratingStims (pattern A
     / pattern B -- see the module docstring's OFF/A/OFF/B flicker) for each
     position (center/left/right), sized and placed as fractions of the
@@ -80,27 +80,33 @@ def build_checker_stims(win, n_squares=8, center_width_frac=0.36, side_width_fra
 
     Returns {'center': {'A': stim, 'B': stim}, 'left': {...}, 'right': {...}}.
 
-    n_squares MUST be a power of two (default 8): PsychoPy's GratingStim
-    texture upload requires a square power-of-two array on some OpenGL
-    backends (older/software renderers without the
-    GL_ARB_texture_non_power_of_two extension) -- an arbitrary size like 6
-    logs a "Requiring a square power of two texture" error and silently
-    fails to render correctly. The array itself stays square even though
-    the bar it's stretched into isn't -- same as checkerboard_task.py's
-    tex_on/tex_off -- so the checker cells appear as tall rectangles rather
-    than squares, which is expected for a bar shape."""
+    THE CHECKER CELLS STAY SQUARE even though each bar itself is a tall,
+    narrow rectangle. PsychoPy's GratingStim texture upload requires a
+    SQUARE power-of-two array on some OpenGL backends (older/software
+    renderers without the GL_ARB_texture_non_power_of_two extension) -- a
+    non-square array like (n_rows, n_cols) with n_rows != n_cols logs a
+    "Requiring a square power of two texture" error, and simply stretching
+    a square array via size=(width, bar_height) elongates the cells into
+    tall rectangles (bar_height/width can be ~3x). So instead the texture
+    stays a minimal 2x2 checker tile (still square, still power of two),
+    and GratingStim's own spatial-frequency tiling (`sf`) repeats it
+    `cells_across / 2` cycles horizontally and a DIFFERENT number of
+    cycles vertically -- scaled by bar_height/width -- so each repeated
+    cell ends up the same physical height as width regardless of the
+    bar's own aspect ratio."""
     from psychopy import visual
     win_w_px, win_h_px = win.size
     aspect = win_w_px / win_h_px   # window width in 'height' units
 
-    checker = np.indices((n_squares, n_squares)).sum(axis=0) % 2
-    checker = checker.astype(float) * 2 - 1
-    checker_inv = -checker
+    tile = np.array([[1.0, -1.0], [-1.0, 1.0]])   # minimal 2x2 checker tile
+    tile_inv = -tile
     bar_height = 1.0   # full window height
+    sf_x = cells_across / 2.0   # cycles across the width (2 cells/cycle)
 
     def make(pos, width, arr):
+        sf = (sf_x, sf_x * bar_height / width)   # compensate for the bar's aspect ratio
         return visual.GratingStim(win, tex=arr, mask=None, size=(width, bar_height),
-                                  pos=pos, units='height', interpolate=False)
+                                  pos=pos, units='height', interpolate=False, sf=sf)
 
     positions = {
         'center': (0.0, center_width_frac),
@@ -108,7 +114,7 @@ def build_checker_stims(win, n_squares=8, center_width_frac=0.36, side_width_fra
         'right': (aspect / 2 - side_width_frac / 2, side_width_frac),
     }
     return {
-        key: {'A': make((x, 0), width, checker), 'B': make((x, 0), width, checker_inv)}
+        key: {'A': make((x, 0), width, tile), 'B': make((x, 0), width, tile_inv)}
         for key, (x, width) in positions.items()
     }
 
