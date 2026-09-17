@@ -136,6 +136,11 @@ def main():
                 nib.save(niftiObject, tmpPath + "/funcRef.nii")
                 ref_img = nib.load(tmpPath + "/funcRef.nii")
                 affine = ref_img.affine; vol_shape = ref_img.shape
+                # squeeze a trailing singleton dim some NIfTIs carry, e.g. (X,Y,Z,1) --
+                # see taskActivation.py's identical fix for why (breaks peak_voxel()'s
+                # edge-margin check otherwise)
+                if len(vol_shape) > 3 and all(s == 1 for s in vol_shape[3:]):
+                    vol_shape = vol_shape[:3]
 
             # ---- preprocess: motion correct -> smooth (identical to taskActivation.py) ----
             nib.save(niftiObject, tmpPath + "/temp.nii")

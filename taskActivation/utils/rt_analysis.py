@@ -494,7 +494,24 @@ def zmap_from_diff(diff_flat, mask_flat):
     return z
 
 
-def peak_voxel(zmap3d, mask3d):
+PEAK_EDGE_MARGIN_VOX = 4   # hardcoded on purpose (see peak_voxel/glm_voxel_traces) -- fine for this project
+
+
+def peak_voxel(zmap3d, mask3d, edge_margin=PEAK_EDGE_MARGIN_VOX):
+    """Argmax of `zmap3d` restricted to `mask3d`, ALSO excluding anything
+    within `edge_margin` voxels of the array's own boundary on any axis --
+    same rationale as glm_voxel_traces()'s edge_margin: a voxel just inside
+    a slightly-too-loose mask, right at the FOV edge, can still win the
+    brain-mask-only argmax otherwise. Falls back to the mask-only peak if
+    nothing survives the margin (e.g. a tiny FOV)."""
+    mask3d = np.asarray(mask3d, dtype=bool)
+    if edge_margin:
+        interior = np.zeros(mask3d.shape, dtype=bool)
+        sl = tuple(slice(edge_margin, s - edge_margin) for s in mask3d.shape)
+        interior[sl] = True
+        restricted = mask3d & interior
+        if restricted.any():
+            mask3d = restricted
     masked = np.where(mask3d, zmap3d, -np.inf)
     return tuple(int(c) for c in np.unravel_index(int(np.argmax(masked)), masked.shape))
 
@@ -643,7 +660,14 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
         ax = fig.add_subplot(gs[n_brain + i], facecolor='black')
         t = np.asarray(tr['t'])
         for (b0, b1) in tr.get('blocks', []):
-            ax.axvspan(b0, b1, color=tr.get('color', 'tab:red'), alpha=0.12)
+            # a faint fill alone (the old alpha=0.12) all but disappears on a
+            # washed-out/low-contrast monitor -- add solid dotted boundary
+            # lines at each block edge (full alpha, not the fill's) so the
+            # block extent stays legible even when the tint itself doesn't
+            blockColor = tr.get('color', 'tab:red')
+            ax.axvspan(b0, b1, color=blockColor, alpha=0.22)
+            ax.axvline(b0, color=blockColor, lw=0.9, ls=':', alpha=0.9)
+            ax.axvline(b1, color=blockColor, lw=0.9, ls=':', alpha=0.9)
         ax.plot(t, tr['measured'], color='white', lw=1.4, label='measured %\u0394S')
         # 'predicted' is optional -- absent for the simple measured-only
         # trace shown before the GLM fit is estimable (see taskActivation.py)
@@ -728,7 +752,14 @@ def nilearn_stat_png_3way(out_png, ref3d, affine, title, maps, labels, colors,
         ax = fig.add_subplot(gs[n_brain + i], facecolor='black')
         t = np.asarray(tr['t'])
         for (b0, b1) in tr.get('blocks', []):
-            ax.axvspan(b0, b1, color=tr.get('color', 'tab:red'), alpha=0.12)
+            # a faint fill alone (the old alpha=0.12) all but disappears on a
+            # washed-out/low-contrast monitor -- add solid dotted boundary
+            # lines at each block edge (full alpha, not the fill's) so the
+            # block extent stays legible even when the tint itself doesn't
+            blockColor = tr.get('color', 'tab:red')
+            ax.axvspan(b0, b1, color=blockColor, alpha=0.22)
+            ax.axvline(b0, color=blockColor, lw=0.9, ls=':', alpha=0.9)
+            ax.axvline(b1, color=blockColor, lw=0.9, ls=':', alpha=0.9)
         ax.plot(t, tr['measured'], color='white', lw=1.4, label='measured %ΔS')
         if tr.get('predicted') is not None:
             ax.plot(t, tr['predicted'], color=tr.get('color', 'tab:red'), lw=1.8,
@@ -1108,9 +1139,6 @@ def make_glm_design(rows, nVols, TR, drift_order=1, rest_types=None):
         cols.append((ft / denom) ** k); names.append(f'drift{k}')
     cols.append(np.ones(nVols)); names.append('intercept')
     return np.column_stack(cols).astype(np.float32), names
-
-
-PEAK_EDGE_MARGIN_VOX = 4   # hardcoded on purpose (see glm_voxel_traces) -- fine for this project
 
 
 def glm_voxel_traces(X, Y, names, mask_idx, vol_shape, TR, conds, events_rows, colors=None,

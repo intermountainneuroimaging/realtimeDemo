@@ -50,6 +50,12 @@ function checkerboard_2cond_task(varargin)
 %                     testing on a non-research display (default false)
 %     'LogPath'       timing log path (default:
 %                     stimuli_ptb/logs/checkerboard_2cond_task_<timestamp>.tsv)
+%     'Win'           an already-open PTB window handle to draw into,
+%                     instead of opening (and auto-closing) a new one --
+%                     pass this to run several tasks back-to-back in one
+%                     PTB session without flashing back to the MATLAB
+%                     desktop between them (see run_battery.m). Default
+%                     []: open and own the window as before.
 %
 %   Example:
 %     checkerboard_2cond_task('Windowed', true, 'TriggerKey', {'space'})   % test
@@ -67,6 +73,7 @@ function checkerboard_2cond_task(varargin)
     addParameter(p, 'ScreenHeight', []);
     addParameter(p, 'SkipSyncTests', false);
     addParameter(p, 'LogPath', '');
+    addParameter(p, 'Win', []);
     parse(p, varargin{:});
     opt = p.Results;
 
@@ -83,9 +90,14 @@ function checkerboard_2cond_task(varargin)
     if ~isempty(opt.ScreenWidth) && ~isempty(opt.ScreenHeight)
         screenSize = [opt.ScreenWidth, opt.ScreenHeight];
     end
-    win = ptb_open_window(opt.Windowed, opt.SkipSyncTests, [], screenSize);
-    cleanupWin = onCleanup(@() sca);   % guarantees the display is released on ANY exit --
-                                       % normal completion, Escape-abort, or an uncaught error
+    if isempty(opt.Win)
+        win = ptb_open_window(opt.Windowed, opt.SkipSyncTests, [], screenSize);
+        cleanupWin = onCleanup(@() sca);   % guarantees the display is released on ANY exit --
+                                           % normal completion, Escape-abort, or an uncaught error
+    else
+        win = opt.Win;   % reusing a caller-opened window (e.g. run_battery.m) -- opening/
+                         % closing it is the caller's job, not this task's
+    end
 
     % ---- build the two phase-inverted checkerboard textures for LEFT/RIGHT
     %      (which share the same width, so share one texture pair) up

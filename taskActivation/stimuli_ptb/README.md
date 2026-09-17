@@ -151,6 +151,15 @@ error dialog. `blackjack_task.m` also always writes its timing log
 (including whatever responses were recorded) before returning, even on an
 Escape abort.
 
+The one exception: pass `'Win', <handle>` (see "Running several tasks in one
+session" below) and a task BORROWS that window instead of opening/owning
+one — it skips `ptb_open_window`/the `sca` cleanup entirely, since closing a
+window it didn't open would pull the display out from under whatever opened
+it (`run_battery.m`, in practice). The window still always gets released
+eventually — `run_battery.m` owns that cleanup instead, with the exact same
+`onCleanup(@() sca)` pattern, just once for the whole session rather than
+once per task.
+
 ## Install and test Psychtoolbox
 
 Psychtoolbox-3 needs MATLAB and a real display; it won't run headless. Use
@@ -287,6 +296,49 @@ All five:
 - Abort cleanly at any time with **Escape** — see "Clean exit on every path"
   above.
 
+## Running several tasks in one session
+
+Calling task scripts directly, one after another, closes the display and
+dumps back to the MATLAB desktop/workspace between EVERY one — each opens
+its own window and closes it (`sca`) on exit (see "Clean exit on every path"
+above). For a real scanning session running several tasks back-to-back,
+that's a jarring flash to the desktop (and back) between every run.
+`run_battery.m` opens the window ONCE, runs each task in sequence sharing
+it, and closes it ONCE at the end:
+
+```matlab
+run_battery({ ...
+    {@motor_task,               {}}, ...
+    {@checkerboard_3cond_task,  {}}, ...
+    {@blackjack_task,           {}}, ...
+})
+```
+
+Each entry is `{taskFunctionHandle, argsCell}` — `argsCell` is that task's
+own name-value args exactly as you'd pass them directly (`{}` for defaults);
+`'Win'` is added automatically, so don't pass it yourself. Window-level
+options (`'Windowed'`, `'ScreenWidth'`/`'ScreenHeight'`, `'SkipSyncTests'`)
+go on the `run_battery` call itself, since they apply to the one shared
+window, not to an individual task:
+
+```matlab
+run_battery({{@motor_task, {'TriggerKey', {'space'}}}}, 'Windowed', true)   % quick test
+```
+
+Before EVERY task (including the first), a plain "staging" screen shows,
+reading `Up next: <task> (i of N) — Experimenter: press SPACE to continue.`
+— a deliberate, controlled breakpoint so the experimenter decides exactly
+when each task starts, rather than it auto-starting the instant
+`run_battery` is called or the moment the previous task ends. Escape at a
+staging screen stops the whole battery there (the window still closes
+cleanly). See `ptb_show_staging_screen.m`.
+
+This works because every task script already takes `win` as a parameter
+everywhere it matters (`ptb_wait_for_trigger`, `ptb_run_block_loop`, etc.)
+— only the window's own open/close was ever hardwired to "this task owns
+it," so passing `'Win'` just opts a task out of that ownership. Nothing else
+about how a task runs changes.
+
 ## What each task looks like
 
 **`motor_task.m`** — bold green "LEFT FINGER" / "RIGHT FINGER" during the
@@ -421,6 +473,12 @@ unchanged. Two things the normal path has that this one doesn't:
   timing-accuracy log, and checks Escape.
 - `ptb_write_event_log.m` — writes a tab-delimited log from a header +
   row cell array.
+- `ptb_show_staging_screen.m` — the harmless between-tasks breakpoint screen
+  (see "Running several tasks in one session" above), via the same KbQueue
+  mechanism, dismissed with SPACE (Escape stops the whole battery).
+- `run_battery.m` — runs several task scripts back-to-back sharing ONE
+  window instead of one per task (see "Running several tasks in one session"
+  above).
 - `motor_task.m`, `blackjack_task.m`, `checkerboard_1cond_task.m`,
   `checkerboard_2cond_task.m`, `checkerboard_3cond_task.m` — the five task
   scripts described above.
@@ -454,4 +512,11 @@ directly against its own PsychoPy port, which was rendered and visually
 confirmed on this machine). Run `test_ptb_install.m` first, then a short
 test run of
 each task (`'Windowed', true`, `'TriggerKey', {'space'}`) before a real
-session.
+session. `run_battery.m` and `ptb_show_staging_screen.m` are newer and in
+the same boat -- never executed in MATLAB, checked for structural/syntax
+correctness only; the `'Win'` option each task script gained for them
+reuses code paths (`ptb_wait_for_trigger`, `ptb_run_block_loop`, etc.) that
+were already exercised as described above, so the main untested surface is
+`run_battery.m`'s own sequencing/staging-screen loop. Try
+`run_battery({{@motor_task, {'TriggerKey', {'space'}}}}, 'Windowed', true)`
+(a one-task battery) before trusting a real multi-task session with it.

@@ -431,6 +431,16 @@ for vol in range(1, nVols + 1):
         nib.save(niftiObject, tmpPath + "/funcRef.nii")
         ref_img = nib.load(tmpPath + "/funcRef.nii")
         affine = ref_img.affine; vol_shape = ref_img.shape
+        # DICOM-derived NIfTIs (dcm2niix, via rt-cloud's BIDS incremental) commonly
+        # carry a trailing singleton dim, e.g. (88, 88, 56, 1) instead of (88, 88, 56)
+        # -- squeeze it here, ONCE, so every downstream reshape(vol_shape)/
+        # unravel_index(..., vol_shape) coordinate calculation in this file gets a
+        # clean 3-tuple. Left unsqueezed, e.g. peak_voxel()'s edge-margin check
+        # silently treats the size-1 4th axis as always out-of-margin (0 can never
+        # be >= edge_margin), making the margin exclusion a no-op on the REAL (x,y,z)
+        # axes too -- exactly what let a boundary voxel like (39,32,1) still win.
+        if len(vol_shape) > 3 and all(s == 1 for s in vol_shape[3:]):
+            vol_shape = vol_shape[:3]
         run_start_time = time.time()   # real-time clock zero -- volume 1's own arrival,
                                         # not script startup (which includes BIDS-stream/
                                         # ClientInterface setup unrelated to scanner pacing)
