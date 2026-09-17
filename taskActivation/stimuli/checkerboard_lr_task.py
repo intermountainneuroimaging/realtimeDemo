@@ -7,19 +7,20 @@ live analysis reads via conf/checkerboard_lr.toml). The Psychtoolbox
 equivalent is stimuli_ptb/checkerboard_lr_task.m -- both present the exact
 same events.tsv.
 
-A full-contrast checkerboard BAR (full window height, a fraction of the
-window width) flickers in one of three screen positions per block: CENTER,
-LEFT, or RIGHT -- the same OFF (blank) -> ON (pattern A) -> OFF -> ON
-(pattern B, the black<->white inverse of A) -> repeat flicker
-checkerboard_task.py uses, at --flicker-hz. LEFT is anchored flush against
-the window's left edge and RIGHT flush against its right edge (not floating
-with a gap), so the two peripheral bars sit as far into the visual
-periphery as the window allows. A small + fixation cross stays visible at
-screen center THROUGHOUT every block (including LEFT/RIGHT, and every OFF
-phase), so the subject can hold central gaze while the checkerboard
-stimulates each position -- standard practice for a peripheral visual
-localizer, so the resulting activation reflects retinotopic stimulus
-location rather than eye movements.
+A full-contrast checkerboard flickers in one of three screen positions per
+block: CENTER, LEFT, or RIGHT -- the same OFF (blank) -> ON (pattern A) ->
+OFF -> ON (pattern B, the black<->white inverse of A) -> repeat flicker
+checkerboard_task.py uses, at --flicker-hz. CENTER is a SQUARE (its height
+set equal to its own width, not the window height) centered on screen, so
+it stimulates only the fovea; LEFT and RIGHT are full window-height BARS,
+anchored flush against the window's left/right edge respectively (not
+floating with a gap), so they reach as far into the visual periphery as the
+window allows. A small + fixation cross stays visible at screen center
+THROUGHOUT every block (including LEFT/RIGHT, and every OFF phase), so the
+subject can hold central gaze while the checkerboard stimulates each
+position -- standard practice for a peripheral visual localizer, so the
+resulting activation reflects retinotopic stimulus location rather than eye
+movements.
 
 Blocks: rest / center / rest / left / rest / right, x4 reps + a trailing
 rest block, 12s blocks, 300s total -- matches conf/checkerboard_lr.toml's
@@ -62,60 +63,62 @@ class _CenterLeftRightStim:
         self.fixation.draw()
 
 
-def build_checker_stims(win, cells_across=8, center_width_frac=0.36, side_width_frac=0.32):
-    """Build the two phase-inverted checkerboard BAR GratingStims (pattern A
-    / pattern B -- see the module docstring's OFF/A/OFF/B flicker) for each
+def build_checker_stims(win, cells_across=8, center_width_frac=0.288, side_width_frac=0.32):
+    """Build the two phase-inverted checkerboard GratingStims (pattern A /
+    pattern B -- see the module docstring's OFF/A/OFF/B flicker) for each
     position (center/left/right), sized and placed as fractions of the
     window -- mirrors checkerboard_lr_task.m's pixel-level destRects, but
     in PsychoPy 'height' units (window height = 1.0, width = aspect) so it
     scales to any window size the same way the rest of this project's
     PsychoPy stims do.
 
-    Each bar spans the FULL window height (a vertical bar, not a square
-    patch) and is only *_width_frac* of the window wide. LEFT sits flush
-    against the window's left edge and RIGHT flush against its right edge
-    (no gap/margin) so each reaches as far into the periphery as the window
-    allows; CENTER stays horizontally centered. side_width_frac is still
-    smaller than center_width_frac, matching the .m version.
+    CENTER is a SQUARE (height == center_width_frac, not the window height)
+    centered on screen, so it stimulates only the fovea. LEFT and RIGHT
+    span the FULL window height (vertical bars) and are only
+    side_width_frac of the window wide; LEFT sits flush against the
+    window's left edge and RIGHT flush against its right edge (no
+    gap/margin) so each reaches as far into the periphery as the window
+    allows. side_width_frac is still smaller than center_width_frac,
+    matching the .m version.
 
     Returns {'center': {'A': stim, 'B': stim}, 'left': {...}, 'right': {...}}.
 
-    THE CHECKER CELLS STAY SQUARE even though each bar itself is a tall,
-    narrow rectangle. PsychoPy's GratingStim texture upload requires a
-    SQUARE power-of-two array on some OpenGL backends (older/software
-    renderers without the GL_ARB_texture_non_power_of_two extension) -- a
-    non-square array like (n_rows, n_cols) with n_rows != n_cols logs a
-    "Requiring a square power of two texture" error, and simply stretching
-    a square array via size=(width, bar_height) elongates the cells into
-    tall rectangles (bar_height/width can be ~3x). So instead the texture
-    stays a minimal 2x2 checker tile (still square, still power of two),
-    and GratingStim's own spatial-frequency tiling (`sf`) repeats it
-    `cells_across / 2` cycles horizontally and a DIFFERENT number of
-    cycles vertically -- scaled by bar_height/width -- so each repeated
-    cell ends up the same physical height as width regardless of the
-    bar's own aspect ratio."""
+    THE CHECKER CELLS STAY SQUARE even though LEFT/RIGHT are tall, narrow
+    rectangles. PsychoPy's GratingStim texture upload requires a SQUARE
+    power-of-two array on some OpenGL backends (older/software renderers
+    without the GL_ARB_texture_non_power_of_two extension) -- a non-square
+    array like (n_rows, n_cols) with n_rows != n_cols logs a "Requiring a
+    square power of two texture" error, and simply stretching a square
+    array via size=(width, height) elongates the cells whenever
+    width != height. So instead the texture stays a minimal 2x2 checker
+    tile (still square, still power of two), and GratingStim's own
+    spatial-frequency tiling (`sf`) repeats it `cells_across / 2` cycles
+    horizontally and a DIFFERENT number of cycles vertically -- scaled by
+    that stim's own height/width ratio -- so each repeated cell ends up
+    the same physical height as width regardless of the stim's own aspect
+    ratio (a no-op correction for CENTER, since it's already square)."""
     from psychopy import visual
     win_w_px, win_h_px = win.size
     aspect = win_w_px / win_h_px   # window width in 'height' units
 
     tile = np.array([[1.0, -1.0], [-1.0, 1.0]])   # minimal 2x2 checker tile
     tile_inv = -tile
-    bar_height = 1.0   # full window height
+    bar_height = 1.0   # full window height, for LEFT/RIGHT only
     sf_x = cells_across / 2.0   # cycles across the width (2 cells/cycle)
 
-    def make(pos, width, arr):
-        sf = (sf_x, sf_x * bar_height / width)   # compensate for the bar's aspect ratio
-        return visual.GratingStim(win, tex=arr, mask=None, size=(width, bar_height),
+    def make(pos, width, height, arr):
+        sf = (sf_x, sf_x * height / width)   # compensate for this stim's own aspect ratio
+        return visual.GratingStim(win, tex=arr, mask=None, size=(width, height),
                                   pos=pos, units='height', interpolate=False, sf=sf)
 
     positions = {
-        'center': (0.0, center_width_frac),
-        'left': (-aspect / 2 + side_width_frac / 2, side_width_frac),
-        'right': (aspect / 2 - side_width_frac / 2, side_width_frac),
+        'center': (0.0, center_width_frac, center_width_frac),
+        'left': (-aspect / 2 + side_width_frac / 2, side_width_frac, bar_height),
+        'right': (aspect / 2 - side_width_frac / 2, side_width_frac, bar_height),
     }
     return {
-        key: {'A': make((x, 0), width, tile), 'B': make((x, 0), width, tile_inv)}
-        for key, (x, width) in positions.items()
+        key: {'A': make((x, 0), width, height, tile), 'B': make((x, 0), width, height, tile_inv)}
+        for key, (x, width, height) in positions.items()
     }
 
 

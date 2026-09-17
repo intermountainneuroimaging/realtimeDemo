@@ -17,7 +17,7 @@ files so the real-time analysis assumes exactly what's actually presented.
 | `blackjack_task.m` | `../study_design/Blackjack_events.tsv` | this project's own two-card blackjack design: hit(1) or stay(2), any time in a 2.0s decision window, immediately reveals a pre-scripted win / lose / tie outcome (3.0s/trial), separated by a jittered 1.0-3.0s inter-trial interval -- 58 trials (24 win / 24 lose / 10 tie), ~5 minutes total |
 | `gambling_task.m` | `../study_design/HcpGambling_acq-ap_events.tsv` | the original HCP project's own card-guessing design, unchanged: reward / punishment / neutral -- kept as-is for `tutorial/`'s offline validation against the real ds000244 data |
 | `checkerboard_task.m` | `../study_design/Checkerboard_events.tsv` | 20s ON/OFF blocks: full-contrast checkerboard (genuine OFF/A/OFF/B flicker, not two patterns swapped with no blank) vs fixation (6 reps + trailing rest, 13 blocks / 260s) |
-| `checkerboard_lr_task.m` | `../study_design/CheckerboardLR_events.tsv` | a 3-position visual localizer: a checkerboard BAR (full window height, flush to the screen edge for LEFT/RIGHT) flickers OFF/A/OFF/B (same reversal-with-blank flicker as `checkerboard_task.m`) in CENTER, LEFT, or RIGHT screen position per block, with a central fixation cross visible throughout -- 12s blocks, 4 reps of each + rest between every block, 300s total |
+| `checkerboard_lr_task.m` | `../study_design/CheckerboardLR_events.tsv` | a 3-position visual localizer flickering OFF/A/OFF/B (same reversal-with-blank flicker as `checkerboard_task.m`) in CENTER, LEFT, or RIGHT screen position per block -- CENTER is a small foveal square, LEFT/RIGHT are full window-height bars flush to the screen edge -- with a central fixation cross visible throughout -- 12s blocks, 4 reps of each + rest between every block, 300s total |
 
 All events.tsv files live in the top-level `study_design/` (not
 `tutorial/study_design/`) — the exact folder `taskActivation.py` itself
@@ -345,14 +345,15 @@ image). Plain fixation during OFF blocks. Matches `taskActivation.py`'s
 `glmCondB=""` in the toml) when pointed at `Checkerboard_events.tsv`.
 
 **`checkerboard_lr_task.m`** — the same OFF/A/OFF/B flicker as
-`checkerboard_task.m`, but as a full-height BAR (not a square patch) —
-`centerWidthFraction`/`sideWidthFraction` of the screen wide, spanning the
-full window height — shown in the CENTER, LEFT, or RIGHT of the screen
-depending on the block; LEFT sits flush against the window's left edge and
-RIGHT flush against its right edge (no gap), reaching as far into the
-periphery as the window allows. A small `+` fixation cross stays visible at
-screen center through every block (including every OFF phase) so the
-subject can hold central gaze while the periphery is stimulated. Matches
+`checkerboard_task.m`, shown in the CENTER, LEFT, or RIGHT of the screen
+depending on the block. CENTER is a SQUARE (`centerWidthFraction` of the
+screen wide AND tall, not the full window height) centered on screen, so
+it stimulates only the fovea; LEFT and RIGHT are full window-height BARS
+(`sideWidthFraction` wide) anchored flush against the window's left/right
+edge respectively (no gap), reaching as far into the periphery as the
+window allows. A small `+` fixation cross stays visible at screen center
+through every block (including every OFF phase) so the subject can hold
+central gaze while the periphery is stimulated. Matches
 `taskActivation.py`'s task-specific 3-way one-vs-rest mode (`glmCondA=center`
 / `glmCondB=left` / `glmCondC=right`) — see "3-way (one-vs-rest) contrast:
 checkerboard_lr only" below.

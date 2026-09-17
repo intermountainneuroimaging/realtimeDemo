@@ -1,19 +1,19 @@
 function checkerboard_lr_task(varargin)
 %CHECKERBOARD_LR_TASK Psychtoolbox presentation of a 3-position flickering-
-%   checkerboard visual localizer: a full-contrast checkerboard BAR (full
-%   window height, a fraction of the window width) flickers in one of
-%   three screen positions per block: CENTER, LEFT, or RIGHT -- the same
-%   OFF (blank) -> ON (pattern A) -> OFF -> ON (pattern B, the
-%   black<->white inverse of A) -> repeat flicker checkerboard_task.m uses,
-%   at 'FlickerHz'. LEFT is anchored flush against the window's left edge
-%   and RIGHT flush against its right edge (not floating with a gap), so
-%   the two peripheral bars sit as far into the visual periphery as the
-%   window allows. A small + fixation cross stays visible at screen center
-%   THROUGHOUT every block (including LEFT/RIGHT, and every OFF phase), so
-%   the subject can hold central gaze while the checkerboard stimulates
-%   each position -- standard practice for a peripheral visual localizer,
-%   so the resulting activation reflects retinotopic stimulus location
-%   rather than eye movements.
+%   checkerboard visual localizer, flickering in one of three screen
+%   positions per block: CENTER, LEFT, or RIGHT -- OFF (blank) -> ON
+%   (pattern A) -> OFF -> ON (pattern B, the black<->white inverse of A)
+%   -> repeat, at 'FlickerHz'. CENTER is a SQUARE (its height set equal to
+%   its own width, not the window height) centered on screen, so it
+%   stimulates only the fovea; LEFT and RIGHT are full window-height BARS,
+%   anchored flush against the window's left/right edge respectively (not
+%   floating with a gap), so they reach as far into the visual periphery
+%   as the window allows. A small + fixation cross stays visible at screen
+%   center THROUGHOUT every block (including LEFT/RIGHT, and every OFF
+%   phase), so the subject can hold central gaze while the checkerboard
+%   stimulates each position -- standard practice for a peripheral visual
+%   localizer, so the resulting activation reflects retinotopic stimulus
+%   location rather than eye movements.
 %
 %   Shows a brief task-instructions screen (dismiss with 1/2, or Escape to
 %   abort), waits for the scanner trigger, then presents
@@ -88,46 +88,48 @@ function checkerboard_lr_task(varargin)
     % ---- build the two phase-inverted checkerboard textures for CENTER
     %      and for LEFT/RIGHT (which share the same width, so share one
     %      texture pair) up front. Each texture's own pixel grid is sized
-    %      to match that bar's real width/height in squareSizePx cells, so
-    %      the checker cells are genuinely SQUARE regardless of how
-    %      narrow/tall the bar is -- rather than stretching one shared
-    %      square texture into a non-square destRect, which would elongate
-    %      the cells into tall rectangles. ----
+    %      to match that stim's real width/height in squareSizePx cells, so
+    %      the checker cells are genuinely SQUARE regardless of the stim's
+    %      own aspect ratio -- rather than stretching one shared square
+    %      texture into a non-square destRect, which would elongate the
+    %      cells. ----
     squareSizePx = 40;
     [screenW, screenH] = Screen('WindowSize', win);
     shortSide = min(screenW, screenH);
 
-    centerWidthFraction = 0.36;  % fraction of the screen's shorter
-                                 % dimension, used as bar WIDTH (bars span
-                                 % the full screen HEIGHT -- see destRects
-                                 % below)
+    centerWidthFraction = 0.288; % fraction of the screen's shorter
+                                 % dimension -- CENTER's own WIDTH, also
+                                 % used as its HEIGHT (a square -- see
+                                 % destRects below); LEFT/RIGHT bars span
+                                 % the full screen HEIGHT instead
     sideWidthFraction = 0.32;    % still smaller than centerWidthFraction
                                  % so LEFT/RIGHT stay visually distinct
                                  % from CENTER
 
-    barWidthCenter = shortSide * centerWidthFraction;
+    barWidthCenter = shortSide * centerWidthFraction;   % CENTER's own width AND height
     barWidthSide = shortSide * sideWidthFraction;
 
     nColsCenter = max(2, round(barWidthCenter / squareSizePx));
+    nRowsCenter = nColsCenter;   % CENTER is a square, so rows == cols
     nColsSide = max(2, round(barWidthSide / squareSizePx));
-    nRows = max(2, round(screenH / squareSizePx));
+    nRowsSide = max(2, round(screenH / squareSizePx));
 
-    [Xc, Yc] = meshgrid(0:nColsCenter - 1, 0:nRows - 1);
+    [Xc, Yc] = meshgrid(0:nColsCenter - 1, 0:nRowsCenter - 1);
     checkerCenter = mod(Xc + Yc, 2);
     texCenterA = Screen('MakeTexture', win, uint8(checkerCenter * 255));
     texCenterB = Screen('MakeTexture', win, uint8((1 - checkerCenter) * 255));
 
-    [Xs, Ys] = meshgrid(0:nColsSide - 1, 0:nRows - 1);
+    [Xs, Ys] = meshgrid(0:nColsSide - 1, 0:nRowsSide - 1);
     checkerSide = mod(Xs + Ys, 2);
     texSideA = Screen('MakeTexture', win, uint8(checkerSide * 255));
     texSideB = Screen('MakeTexture', win, uint8((1 - checkerSide) * 255));
 
-    % Bars span the FULL window height; LEFT is anchored flush against the
-    % window's left edge and RIGHT flush against its right edge (no
-    % margin/gap), so each reaches as far into the periphery as the window
-    % allows. CENTER stays horizontally centered.
+    % CENTER is a SQUARE centered on screen (stimulates only the fovea);
+    % LEFT/RIGHT span the FULL window height and are anchored flush
+    % against the window's left/right edge (no margin/gap), so each
+    % reaches as far into the periphery as the window allows.
     destRects = struct( ...
-        'center', CenterRectOnPointd([0 0 barWidthCenter screenH], ...
+        'center', CenterRectOnPointd([0 0 barWidthCenter barWidthCenter], ...
             screenW / 2, screenH / 2), ...
         'left', [0, 0, barWidthSide, screenH], ...
         'right', [screenW - barWidthSide, 0, screenW, screenH]);

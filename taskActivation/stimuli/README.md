@@ -26,7 +26,7 @@ the analysis assumes happened, by construction.
 | `hcp_motor_task.py` | `../study_design/HcpMotor_acq-ap_events.tsv` | left/right hand, left/right foot, tongue (each with a brief get-ready cue) |
 | `generic_motor_task.py` | `../study_design/GenericMotorLR_events.tsv` | this project's own left/right finger-tapping design (`conf/motor.toml`) -- 30s tapping blocks separated by 10s rest, no get-ready cues; the Psychtoolbox equivalent is `../stimuli_ptb/motor_task.m` |
 | `checkerboard_task.py` | `../study_design/Checkerboard_events.tsv` | this project's own flickering-checkerboard ON/OFF localizer (`conf/checkerboard.toml`) -- 20s ON/OFF blocks, genuine OFF/pattern-A/OFF/pattern-B flicker (not two patterns swapped with no blank); the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_task.m` |
-| `checkerboard_lr_task.py` | `../study_design/CheckerboardLR_events.tsv` | this project's own 3-position checkerboard localizer (`conf/checkerboard_lr.toml`) -- center/left/right full-height bars (LEFT/RIGHT flush to the screen edge), same OFF/A/OFF/B flicker as `checkerboard_task.py`, 3-way one-vs-rest GLM contrast; the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_lr_task.m` |
+| `checkerboard_lr_task.py` | `../study_design/CheckerboardLR_events.tsv` | this project's own 3-position checkerboard localizer (`conf/checkerboard_lr.toml`) -- CENTER is a small foveal square, LEFT/RIGHT are full-height bars flush to the screen edge, same OFF/A/OFF/B flicker as `checkerboard_task.py`, 3-way one-vs-rest GLM contrast; the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_lr_task.m` |
 | `blackjack_task.py` | `../study_design/Blackjack_events.tsv` | this project's own two-card blackjack design (`conf/gambling.toml`) -- hit(1)/stay(2) on a dealt hand, then a pre-scripted win/lose/tie outcome; the Psychtoolbox equivalent is `../stimuli_ptb/blackjack_task.m` |
 | `hcp_gambling_task.py` | `../study_design/HcpGambling_acq-ap_events.tsv` | the original HCP card-guess task, unchanged: reward, punishment, neutral -- kept as-is for `tutorial/`'s offline validation against the real ds000244 data; not wired to any `conf/*.toml` contrast anymore |
 
@@ -166,17 +166,18 @@ contrast for live analysis. The Psychtoolbox equivalent is
 `../stimuli_ptb/checkerboard_task.m`.
 
 **`checkerboard_lr_task.py`** — the same OFF/A/OFF/B flicker as
-`checkerboard_task.py` (`--flicker-hz`, default 8), but as a full-height
-BAR (not a square patch) shown in one of three screen positions per 12s
-block: CENTER, LEFT, or RIGHT. LEFT is anchored flush against the window's
-left edge and RIGHT flush against its right edge (no gap), so each bar
-reaches as far into the periphery as the window allows; CENTER stays
-horizontally centered. A `+` fixation cross stays visible on **every**
-frame of **every** condition (including rest, and every OFF phase) so the
-subject can hold central gaze while LEFT/RIGHT stimulate the visual
-periphery. 25 blocks (rest/center/rest/left/rest/right x4 + trailing
-rest), 300s total. Matches `conf/checkerboard_lr.toml`'s 3-way one-vs-rest
-GLM contrast (`glmCondA=center` / `glmCondB=left` / `glmCondC=right`, each
+`checkerboard_task.py` (`--flicker-hz`, default 8), shown in one of three
+screen positions per 12s block: CENTER, LEFT, or RIGHT. CENTER is a SQUARE
+(its height set equal to its own width, not the window height) centered on
+screen, so it stimulates only the fovea; LEFT and RIGHT are full
+window-height BARS, anchored flush against the window's left/right edge
+respectively (no gap), so each reaches as far into the periphery as the
+window allows. A `+` fixation cross stays visible on **every** frame of
+**every** condition (including rest, and every OFF phase) so the subject
+can hold central gaze while LEFT/RIGHT stimulate the visual periphery.
+25 blocks (rest/center/rest/left/rest/right x4 + trailing rest), 300s
+total. Matches `conf/checkerboard_lr.toml`'s 3-way one-vs-rest GLM
+contrast (`glmCondA=center` / `glmCondB=left` / `glmCondC=right`, each
 contrasted against the mean of the other two) for live analysis. The
 Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_lr_task.m`.
 
