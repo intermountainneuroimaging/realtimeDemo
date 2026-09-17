@@ -164,7 +164,7 @@ def main():
                 frac = 100.0 * brain_mask_flat.mean()
                 print(f"[replay] Brain mask: {mask_method} -> {int(brain_mask_flat.sum())} voxels "
                     f"({frac:.1f}% of FOV)")
-                ref3d = (baseline_mean_full * brain_mask_flat).reshape(vol_shape)
+                ref3d = baseline_mean_full.reshape(vol_shape)   # UNMASKED display background
                 mrt.write_reference(liveDir, ref3d, affine)
                 mask_idx = np.where(brain_mask_flat)[0]
                 Yglm = np.zeros((nVols, mask_idx.size), np.float32)

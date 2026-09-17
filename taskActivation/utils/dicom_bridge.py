@@ -245,13 +245,16 @@ def main(argv=None):
             return True
         if not settled(src_path):
             return False   # still being written; try again next pass
-        ds = pydicom.dcmread(src_path)   # full read (incl. pixel data) to write back out
+        # retried: reading a file moments after a scanner's OWN copy process
+        # finished writing it can hit a transient EDEADLK ("Resource deadlock
+        # avoided") on some host bind-mount layers (seen with Docker Desktop
+        # for Mac) -- not a real problem with the file. See _retry_read()/
+        # _atomic_write() in rt_analysis.py for the same treatment elsewhere.
+        ds = mrt._retry_read(lambda: pydicom.dcmread(src_path))   # full read (incl. pixel data) to write back out
         if not mrt.promote_repetition_time_to_top_level(ds):
             print(f"[bridge][warn] {os.path.basename(src_path)} has no RepetitionTime "
                   "anywhere -- rt-cloud will reject this volume with MissingMetadataError")
-        tmp = dst_path + '.part'
-        ds.save_as(tmp, write_like_original=False)
-        os.replace(tmp, dst_path)
+        mrt._atomic_write(dst_path, lambda tmp: ds.save_as(tmp, write_like_original=False))
         print(f"[bridge] series {series_no} vol {instance:3d}  {os.path.basename(src_path)}  ->  {fname}")
         return True
 

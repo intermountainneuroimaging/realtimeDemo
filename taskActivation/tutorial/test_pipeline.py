@@ -96,7 +96,7 @@ for vol in range(1, nVols + 1):
         nib.save(nib.Nifti1Image(baseline_mean_full.reshape(shape).astype(np.float32), affine), baselineP)
         bmask, mask_method = mrt.make_brain_mask(baselineP, baseline_mean_full.reshape(shape),
                                                   affine, shape, method='bet')
-        ref3d = (baseline_mean_full * bmask).reshape(shape)
+        ref3d = baseline_mean_full.reshape(shape)   # UNMASKED display background
         mrt.write_reference(liveDir, ref3d, affine)
         mask_idx = np.where(bmask)[0]
         Yglm = np.zeros((nVols, mask_idx.size), np.float32)

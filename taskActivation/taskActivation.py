@@ -485,9 +485,14 @@ for vol in range(1, nVols + 1):
                      os.path.join(liveDir, 'brain_mask.nii.gz'))
         except Exception:
             pass
-        # the masked baseline average doubles as the display background (higher
-        # SNR than any single frame; registration still used the un-masked funcRef.nii)
-        ref3d = (baseline_mean_full * brain_mask_flat).reshape(vol_shape)
+        # the (UNMASKED) baseline average doubles as the display background --
+        # higher SNR than any single frame, and showing the full image (not
+        # just what the brain mask kept) makes it easy to visually spot a
+        # mask that's too tight/loose against the real anatomy underneath it.
+        # The mask itself is still overlaid separately in brain_mask.nii.gz;
+        # only the STATS (GLM/%-change) are restricted to it, never the
+        # underlay.
+        ref3d = baseline_mean_full.reshape(vol_shape)
         mrt.write_reference(liveDir, ref3d, affine)
         mask_idx = np.where(brain_mask_flat)[0]
         Yglm = np.zeros((nVols, mask_idx.size), np.float32)   # GLM signal buffer

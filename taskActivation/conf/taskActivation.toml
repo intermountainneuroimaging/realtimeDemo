@@ -54,10 +54,12 @@ restTypes = []             # trial_types to treat as implicit baseline; [] = aut
 zCuts = []                 # fixed axial slice positions in mm, e.g. [-20,-5,10,25,40,55]; [] = auto
                            # ([] also auto-picks the slice COUNT, fixed at 6 in taskActivation.py)
 baselineFrames = -1        # -1 = auto: use all frames before the first event as baseline
-maskPercentile = 98        # brain mask = ref > maskFraction * p[maskPercentile]
+maskPercentile = 98        # UNUSED (kept so old configs still load) -- 'threshold' mode now cuts
+                           # via Otsu's method on the image's own histogram, not a percentile
 maskMethod = "bet"          # 'bet' (FSL skull-strip; removes skull/neck) | 'epi' | 'threshold'
 maskFrac = 0.35             # BET fractional-intensity threshold (lower = larger brain)
-maskFraction = 0.12
+maskFraction = 0.12        # multiplier on the Otsu cut for 'threshold' mode: 0.12 (this default)
+                           # = neutral/1x Otsu; below loosens it, above tightens it
 
 # ---- realtime display ----
 liveEveryTR = 1            # write a live update every N volumes

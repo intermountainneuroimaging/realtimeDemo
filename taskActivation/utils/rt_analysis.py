@@ -18,6 +18,8 @@ import os
 import sys
 import csv
 import re
+import time
+import random
 import subprocess
 import importlib
 import numpy as np
@@ -56,6 +58,57 @@ def ensure_nilearn(verbose=True):
     return False
 
 
+def _atomic_write(path, write_fn, retries=5, base_delay=0.15):
+    """Write `path` atomically: `write_fn(tmp_path)` fills a temp file, then
+    os.replace() swaps it into place -- so any reader (the web viewer, a
+    browser polling current.png) never sees a partial write. Retries on
+    OSError, using a FRESH temp filename (pid + attempt + random suffix) each
+    time rather than reusing the same one: in practice this has been seen to
+    fail with EDEADLK ("Resource deadlock avoided") on Docker Desktop for
+    Mac's bind-mount layer for a specific path, which retrying the SAME temp
+    name does not clear but a different one does. Re-raises the last error
+    if every attempt fails."""
+    last_exc = None
+    # keep `path`'s own extension on the tmp name -- some writers (matplotlib,
+    # PIL) infer the output format from it and error out otherwise.
+    root, ext = os.path.splitext(path)
+    for attempt in range(retries):
+        tmp = f"{root}.tmp{os.getpid()}_{attempt}_{random.randint(0, 1_000_000)}{ext}"
+        try:
+            write_fn(tmp)
+            os.replace(tmp, path)
+            return
+        except OSError as e:
+            last_exc = e
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except OSError:
+                pass
+            if attempt < retries - 1:
+                time.sleep(base_delay * (attempt + 1))
+    raise last_exc
+
+
+def _retry_read(read_fn, retries=5, base_delay=0.15):
+    """Call `read_fn()` (a zero-arg callable that performs a file read),
+    retrying on OSError -- the read-side counterpart to _atomic_write() above,
+    same rationale: Docker Desktop for Mac's bind-mount layer can return
+    EDEADLK ("Resource deadlock avoided") for an ordinary read too, on a path
+    another process (e.g. mock_scanner.py's own os.replace() of its .part
+    file, moments before) just touched. Re-raises the last error if every
+    attempt fails."""
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            return read_fn()
+        except OSError as e:
+            last_exc = e
+            if attempt < retries - 1:
+                time.sleep(base_delay * (attempt + 1))
+    raise last_exc
+
+
 # condition codes
 def pack_frames(vol):
     """Pack a 3D volume (rows, cols, slices) into an Enhanced-multi-frame-style
@@ -80,7 +133,11 @@ def dicom_header_info(path):
     Returns a dict with whichever of TR/pixelSpacing/sliceThickness/rows/cols/
     nFrames were found (missing ones are simply absent, not defaulted here)."""
     import pydicom
-    ds = pydicom.dcmread(path, stop_before_pixels=True)
+    # retried: `path` is frequently a file a writer (mock_scanner.py, a real
+    # scanner's copy process, dicom_bridge.py) just finished moments ago, and
+    # reading it right after can hit the same transient EDEADLK described on
+    # _retry_read()/_atomic_write() -- not a real problem with the file.
+    ds = _retry_read(lambda: pydicom.dcmread(path, stop_before_pixels=True))
     info = {}
     if hasattr(ds, 'Rows'):
         info['rows'] = int(ds.Rows)
@@ -251,12 +308,86 @@ def build_design_from_events(rows, nVols, TR, hrf_delay,
 
 
 # ======================= registration-free analysis ==========================
+def _largest_component(mask):
+    """Keep only the largest connected component of a 3D boolean mask. A
+    per-voxel intensity/EPI mask can't tell brain from other bright,
+    disconnected tissue (eye orbits, skull-strip debris, scanner artifacts)
+    by brightness alone -- but that tissue is almost always a separate blob
+    from the brain itself, so this reliably strips it out. No-op if `mask`
+    is empty or already a single component."""
+    from scipy import ndimage
+    lbl, n = ndimage.label(mask)
+    if n <= 1:
+        return mask
+    sizes = ndimage.sum(mask, lbl, index=range(1, n + 1))
+    biggest = 1 + int(np.argmax(sizes))
+    return lbl == biggest
+
+
+def _exclude_fov_boundary(mask):
+    """Hard-exclude the outermost face (index 0 and -1 along every axis) of a
+    3D boolean mask, unconditionally. BET/EPI/threshold judge brain purely by
+    brightness, and the boundary slice/row/column of an acquired volume is
+    the least reliable place for that (coil sensitivity fall-off, slab-edge
+    smoothing/interpolation bleed) -- it is never real brain, no matter how
+    bright it looks, so this always strips it (unlike a general erosion,
+    which only shrinks the mask's own surface and can no-op on a thin mask,
+    and doesn't touch the brain's own interior surface elsewhere)."""
+    mask = np.array(mask, copy=True)
+    mask[0, :, :] = False; mask[-1, :, :] = False
+    mask[:, 0, :] = False; mask[:, -1, :] = False
+    mask[:, :, 0] = False; mask[:, :, -1] = False
+    return mask
+
+
+def _otsu_threshold(vals, nbins=256):
+    """Otsu's method: the intensity cut that maximizes between-class variance
+    over `vals`' OWN histogram, i.e. it finds wherever that specific image's
+    brain-vs-background split actually falls, rather than assuming a fixed
+    fraction of a high percentile is always the right cut."""
+    hist, edges = np.histogram(vals, bins=nbins)
+    hist = hist.astype(np.float64)
+    p = hist / hist.sum()
+    centers = (edges[:-1] + edges[1:]) / 2
+    w0 = np.cumsum(p)
+    mu = np.cumsum(p * centers)
+    mu_t = mu[-1]
+    with np.errstate(divide='ignore', invalid='ignore'):
+        between = (mu_t * w0 - mu) ** 2 / (w0 * (1 - w0))
+    between[~np.isfinite(between)] = -1
+    return float(centers[np.argmax(between)])
+
+
 def _threshold_mask(ref3d, maskFraction=0.12, maskPercentile=98):
+    """Brain-vs-background split via Otsu's method rather than a FIXED
+    fraction of a high percentile: a real EPI baseline's noise floor doesn't
+    scale down with signal the way a percentile-of-the-brightest-voxels
+    threshold assumes -- SNR is worse near slab edges/coil fall-off than near
+    the (bright) brain center, so a cut calibrated off the volume's own
+    brightest voxels lets scattered edge noise spikes pass just as easily as
+    real tissue. Verified on an actual baseline average: the old formula put
+    ~22% of the very edge slice "in brain" (noise, not tissue); Otsu put ~3%
+    there, matching the nilearn EPI mask's own independent estimate. Otsu is
+    computed over the FULL image (background included), not just the
+    positive voxels -- on real EPI data that barely matters (background is
+    rarely exact zero), but on a hard-zero-background image (e.g. the
+    synthetic mock scanner's ellipsoid) filtering to positive-only voxels
+    FIRST leaves nothing bimodal left to split: Otsu would carve the brain
+    population itself roughly in half instead of separating it from
+    background, discarding real brain voxels.
+    `maskFraction` still works as a multiplier on the Otsu cut for backward
+    compatibility (1.0 = pure Otsu; below 1 loosens it, above tightens it) --
+    it's no longer applied to `maskPercentile`, which is now unused; both
+    keep their old names/defaults in configs so existing tomls still load.
+    Kept named/shaped identically for the make_brain_mask() dispatcher."""
     ref3d = np.asarray(ref3d, np.float32)
-    pos = ref3d[ref3d > 0]
-    if pos.size == 0:
+    if not np.any(ref3d > 0):
         return np.zeros(ref3d.shape, bool)
-    return ref3d > maskFraction * np.percentile(pos, maskPercentile)
+    # maskFraction's old default (0.12) was calibrated for the old percentile
+    # formula, not Otsu -- rescale so that OLD default still means "neutral"
+    # (1x Otsu) rather than suddenly thresholding almost nothing out.
+    mult = maskFraction / 0.12
+    return ref3d > mult * _otsu_threshold(ref3d.ravel())
 
 
 def _epi_mask(ref3d, affine):
@@ -318,12 +449,21 @@ def make_brain_mask(image_path, ref3d, affine, vol_shape, method='bet', frac=0.3
                 mask = _epi_mask(d, aff)
             else:
                 mask = _threshold_mask(d, maskFraction, maskPercentile)
+            # EPI/threshold pick brain by brightness alone, which eye orbits
+            # and other extra-cranial tissue can pass just as easily -- drop
+            # everything but the largest connected blob (BET already excludes
+            # these, so this is a no-op safety net for that method). Then
+            # unconditionally exclude the FOV's own outer boundary -- never
+            # real brain regardless of what the brightness test says.
+            if mask is not None:
+                mask = _exclude_fov_boundary(_largest_component(mask))
         except Exception:
             mask = None
         if mask is not None and mask.shape == vol_shape and 0.02 < mask.mean() < 0.8:
             return mask.flatten(), m
     # last resort: threshold on the functional reference itself
-    return _threshold_mask(ref3d, maskFraction, maskPercentile).flatten(), 'threshold(ref)'
+    mask = _exclude_fov_boundary(_largest_component(_threshold_mask(ref3d, maskFraction, maskPercentile)))
+    return mask.flatten(), 'threshold(ref)'
 
 
 def compute_brain_mask(ref3d, maskFraction=0.12, maskPercentile=98, affine=None):
@@ -438,13 +578,18 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
         import matplotlib.pyplot as plt
     except Exception:
         return False
+    has_con = (contrast3d is not None and np.isfinite(contrast3d).any()
+               and np.nanmax(np.abs(contrast3d)) > 1e-6)
     if z_cuts is not None and len(z_cuts):
         cuts = list(z_cuts)                          # explicit mm levels
     else:
-        cuts = _brain_z_cuts(ref3d, affine, n_slices) or n_slices   # real brain content, or fall back to auto count
+        # ref3d is the UNMASKED display background now, so it can't be used to
+        # find "real brain content" any more (real EPI data is nonzero almost
+        # everywhere, mask or no mask) -- use the stat map instead, which IS
+        # still zeroed outside the brain mask (percent_change()/_embed()).
+        content3d = contrast3d if has_con else zmap3d
+        cuts = _brain_z_cuts(content3d, affine, n_slices) or n_slices   # real brain content, or fall back to auto count
     bg = nib.Nifti1Image(np.asarray(ref3d, np.float32), affine)
-    has_con = (contrast3d is not None and np.isfinite(contrast3d).any()
-               and np.nanmax(np.abs(contrast3d)) > 1e-6)
     if has_con:
         stat_img = nib.Nifti1Image(np.asarray(contrast3d, np.float32), affine)
         stat_thresh, stat_cmap, stat_title = contrast_thresh, 'RdBu_r', contrast_label
@@ -513,7 +658,7 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
         for s in ax.spines.values():
             s.set_color('white')
         ax.legend(loc='upper right', fontsize=7, facecolor='black', labelcolor='white')
-    fig.savefig(out_png, dpi=110, facecolor='black')
+    _atomic_write(out_png, lambda tmp: fig.savefig(tmp, dpi=110, facecolor='black'))
     plt.close(fig)
     return True
 
@@ -542,7 +687,11 @@ def nilearn_stat_png_3way(out_png, ref3d, affine, title, maps, labels, colors,
     if z_cuts is not None and len(z_cuts):
         cuts = list(z_cuts)
     else:
-        cuts = _brain_z_cuts(ref3d, affine, n_slices) or n_slices
+        # ref3d is the UNMASKED display background -- use one of the (still
+        # brain-masked) contrast maps to find real brain extent instead; see
+        # nilearn_stat_png()'s identical comment.
+        content3d = next((m for m in maps if m is not None), None)
+        cuts = (_brain_z_cuts(content3d, affine, n_slices) if content3d is not None else None) or n_slices
     bg = nib.Nifti1Image(np.asarray(ref3d, np.float32), affine)
 
     traces = voxel_traces or []
@@ -592,7 +741,7 @@ def nilearn_stat_png_3way(out_png, ref3d, affine, title, maps, labels, colors,
         for s in ax.spines.values():
             s.set_color('white')
         ax.legend(loc='upper right', fontsize=7, facecolor='black', labelcolor='white')
-    fig.savefig(out_png, dpi=110, facecolor='black')
+    _atomic_write(out_png, lambda tmp: fig.savefig(tmp, dpi=110, facecolor='black'))
     plt.close(fig)
     return True
 
@@ -618,7 +767,9 @@ def _matplotlib_montage_png(out_png, zmap3d, ref3d, peak, thresh, title,
         axes[0].text(0.02, 0.98, f"frame {int(frame)}", transform=axes[0].transAxes,
                      color='yellow', fontsize=13, fontweight='bold', va='top', ha='left',
                      bbox=dict(facecolor='black', alpha=0.6, pad=3, edgecolor='none'))
-    fig.tight_layout(); fig.savefig(out_png, dpi=110); plt.close(fig)
+    fig.tight_layout()
+    _atomic_write(out_png, lambda tmp: fig.savefig(tmp, dpi=110))
+    plt.close(fig)
 
 
 def write_reference(liveDir, ref3d, affine):
@@ -691,10 +842,10 @@ def write_live_viewer_html(liveDir):
     its own without the other."""
     os.makedirs(liveDir, exist_ok=True)
     out = os.path.join(liveDir, 'viewer.html')
-    tmp = out + '.tmp'
-    with open(tmp, 'w') as f:
-        f.write(_LIVE_VIEWER_HTML)
-    os.replace(tmp, out)
+    def _w(tmp):
+        with open(tmp, 'w') as f:
+            f.write(_LIVE_VIEWER_HTML)
+    _atomic_write(out, _w)
     return out
 
 
@@ -706,10 +857,10 @@ def write_live_viewer_motion_html(liveDir):
     startup, not re-written per volume."""
     os.makedirs(liveDir, exist_ok=True)
     out = os.path.join(liveDir, 'viewer-motion.html')
-    tmp = out + '.tmp'
-    with open(tmp, 'w') as f:
-        f.write(_LIVE_VIEWER_MOTION_HTML)
-    os.replace(tmp, out)
+    def _w(tmp):
+        with open(tmp, 'w') as f:
+            f.write(_LIVE_VIEWER_MOTION_HTML)
+    _atomic_write(out, _w)
     return out
 
 
@@ -747,10 +898,10 @@ def write_live_update(liveDir, run, vol, runLabel, zmap3d, ref3d, affine, peak, 
     # not just the brain mosaics
     bundle['voxel_traces'] = np.asanyarray(voxel_traces or [], dtype=object)
     np.savez_compressed(fn, **bundle)
-    tmp = os.path.join(liveDir, 'latest.tmp')
-    with open(tmp, 'w') as f:
-        f.write(os.path.basename(fn))
-    os.replace(tmp, os.path.join(liveDir, 'latest.txt'))
+    def _w(tmp):
+        with open(tmp, 'w') as f:
+            f.write(os.path.basename(fn))
+    _atomic_write(os.path.join(liveDir, 'latest.txt'), _w)
     out_png = os.path.join(liveDir, 'current.png')
     cond_txt = f" | {condLabel}" if condLabel else ""
     title = f"{runLabel} | run {run} | vol {vol}{cond_txt}"
@@ -959,7 +1110,11 @@ def make_glm_design(rows, nVols, TR, drift_order=1, rest_types=None):
     return np.column_stack(cols).astype(np.float32), names
 
 
-def glm_voxel_traces(X, Y, names, mask_idx, vol_shape, TR, conds, events_rows, colors=None):
+PEAK_EDGE_MARGIN_VOX = 4   # hardcoded on purpose (see glm_voxel_traces) -- fine for this project
+
+
+def glm_voxel_traces(X, Y, names, mask_idx, vol_shape, TR, conds, events_rows, colors=None,
+                     edge_margin=PEAK_EDGE_MARGIN_VOX):
     """For each condition in `conds`, fit the full GLM, find the voxel with the
     largest beta for that condition, and return a trace dict: the measured
     %-signal-change timecourse at that voxel, and the HRF-predicted response
@@ -967,7 +1122,16 @@ def glm_voxel_traces(X, Y, names, mask_idx, vol_shape, TR, conds, events_rows, c
     full-model fit, which would include drift/intercept/every other modeled
     condition and no longer isolate what this condition actually predicts).
     `X`/`Y` can be a prefix of the full series (e.g. Xglm[:vol]) for a live
-    per-frame refit, or the complete series for the end-of-run pass."""
+    per-frame refit, or the complete series for the end-of-run pass.
+
+    The peak search excludes any voxel within `edge_margin` voxels of the
+    FOV's own boundary on ANY axis, on top of the brain mask (mask_idx)
+    already restricting `Y`'s columns -- the brain mask alone wasn't enough
+    (a voxel just inside a slightly-too-loose mask, near the edge, could
+    still win); a flat voxel margin is a blunt, hardcoded rule rather than
+    anything geometry- or intensity-aware, which is an acceptable tradeoff
+    here. Falls back to the unrestricted peak if nothing survives the
+    margin (e.g. a tiny FOV) rather than silently returning no trace."""
     try:
         beta, _, _, _ = np.linalg.lstsq(X, Y, rcond=None)   # K x nVox
     except Exception:
@@ -975,12 +1139,22 @@ def glm_voxel_traces(X, Y, names, mask_idx, vol_shape, TR, conds, events_rows, c
     iI = names.index('intercept')
     t = np.arange(X.shape[0]) * TR
     palette = colors or ['tab:red', 'tab:blue', 'tab:green', 'tab:orange']
+
+    # column positions (into Y/beta, NOT raw flat voxel indices) whose voxel
+    # sits at least `edge_margin` voxels inside the FOV on every axis
+    ijk = np.array(np.unravel_index(np.asarray(mask_idx), vol_shape)).T   # (nVoxMasked, 3)
+    shape_arr = np.array(vol_shape)
+    interior = np.where(np.all((ijk >= edge_margin) & (ijk < shape_arr - edge_margin), axis=1))[0]
+
     traces = []
     for k, cond in enumerate(conds):
         if not cond or cond not in names:
             continue
         ic = names.index(cond)
-        col = int(np.argmax(beta[ic]))                      # peak voxel for this condition
+        if interior.size:
+            col = int(interior[np.argmax(beta[ic, interior])])   # peak voxel, edge-margin excluded
+        else:
+            col = int(np.argmax(beta[ic]))   # nothing survives the margin -- fall back rather than drop the trace
         vox = tuple(int(c) for c in np.unravel_index(int(mask_idx[col]), vol_shape))
         mean = abs(float(beta[iI, col])) + 1e-6
         measured = 100.0 * (Y[:, col] - mean) / mean
@@ -1082,13 +1256,13 @@ def write_motion(liveDir, motion_rows, TR=2.0):
     (vol*TR) is added so viewers can use seconds on the x-axis."""
     os.makedirs(liveDir, exist_ok=True)
     p = os.path.join(liveDir, 'motion.tsv')
-    tmp = p + '.tmp'
-    with open(tmp, 'w') as f:
-        f.write('vol\ttime_s\trot_x\trot_y\trot_z\ttrans_x\ttrans_y\ttrans_z\n')
-        for r in motion_rows:
-            vol = r[0]
-            f.write(f'{vol:g}\t{vol*TR:.3f}\t' + '\t'.join(f'{v:.6f}' for v in r[1:]) + '\n')
-    os.replace(tmp, p)
+    def _w(tmp):
+        with open(tmp, 'w') as f:
+            f.write('vol\ttime_s\trot_x\trot_y\trot_z\ttrans_x\ttrans_y\ttrans_z\n')
+            for r in motion_rows:
+                vol = r[0]
+                f.write(f'{vol:g}\t{vol*TR:.3f}\t' + '\t'.join(f'{v:.6f}' for v in r[1:]) + '\n')
+    _atomic_write(p, _w)
 
 
 def write_motion_png(liveDir, motion_rows, TR=2.0, head_radius_mm=50.0, fd_thresh=0.5,
@@ -1146,8 +1320,7 @@ def write_motion_png(liveDir, motion_rows, TR=2.0, head_radius_mm=50.0, fd_thres
                  color='white', fontsize=10, fontweight='bold')
     fig.tight_layout()
     out = os.path.join(liveDir, 'motion.png')
-    tmp = out + '.tmp.png'
-    fig.savefig(tmp, dpi=110, facecolor='black'); os.replace(tmp, out)
+    _atomic_write(out, lambda tmp: fig.savefig(tmp, dpi=110, facecolor='black'))
     return True
 
 
