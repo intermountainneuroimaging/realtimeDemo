@@ -1,5 +1,5 @@
-function checkerboard_lr_task(varargin)
-%CHECKERBOARD_LR_TASK Psychtoolbox presentation of a 3-position flickering-
+function checkerboard_3cond_task(varargin)
+%CHECKERBOARD_3COND_TASK Psychtoolbox presentation of a 3-position flickering-
 %   checkerboard visual localizer, flickering in one of three screen
 %   positions per block: CENTER, LEFT, or RIGHT -- OFF (blank) -> ON
 %   (pattern A) -> OFF -> ON (pattern B, the black<->white inverse of A)
@@ -17,9 +17,9 @@ function checkerboard_lr_task(varargin)
 %
 %   Shows a brief task-instructions screen (dismiss with 1/2, or Escape to
 %   abort), waits for the scanner trigger, then presents
-%   ../study_design/CheckerboardLR_events.tsv (rest, center, rest, left,
+%   ../study_design/Checkerboard3Cond_events.tsv (rest, center, rest, left,
 %   rest, right, x4 + a trailing rest block; 12s blocks, 25 blocks, 300s
-%   total). Matches conf/checkerboard_lr.toml's 3-way one-vs-rest GLM
+%   total). Matches conf/checkerboard_3cond.toml's 3-way one-vs-rest GLM
 %   contrast (glmCondA=center / glmCondB=left / glmCondC=right, each
 %   contrasted against the mean of the other two) for live analysis.
 %
@@ -29,7 +29,7 @@ function checkerboard_lr_task(varargin)
 %                     the shifted-symbol name PTB gives that key; run
 %                     test_ptb_install.m and press your actual trigger/box
 %                     once to see exactly what name it reports if unsure)
-%     'EventsFile'    path to events.tsv (default: CheckerboardLR_events.tsv)
+%     'EventsFile'    path to events.tsv (default: Checkerboard3Cond_events.tsv)
 %     'Duration'      total run length in seconds (default: end of the last
 %                     event); pass nVols*TR to also show trailing rest
 %     'FlickerHz'     how many times per second the checkerboard's state
@@ -37,7 +37,7 @@ function checkerboard_lr_task(varargin)
 %                     OFF (blank) -> ON (pattern A) -> OFF -> ON (pattern
 %                     B, the black<->white inverse of A) -> repeat, each
 %                     state lasting 1/FlickerHz -- same semantics as
-%                     checkerboard_task.m
+%                     checkerboard_1cond_task.m
 %     'Windowed'      true for a windowed test window (default false)
 %     'ScreenWidth'   \
 %     'ScreenHeight'   } pixel resolution to open at, e.g. 1920/1080 for a
@@ -47,17 +47,17 @@ function checkerboard_lr_task(varargin)
 %     'SkipSyncTests' true to disable PTB's flip-timing sync tests, for
 %                     testing on a non-research display (default false)
 %     'LogPath'       timing log path (default:
-%                     stimuli_ptb/logs/checkerboard_lr_task_<timestamp>.tsv)
+%                     stimuli_ptb/logs/checkerboard_3cond_task_<timestamp>.tsv)
 %
 %   Example:
-%     checkerboard_lr_task('Windowed', true, 'TriggerKey', {'space'})   % test
-%     checkerboard_lr_task('ScreenWidth', 1920, 'ScreenHeight', 1080)   % real run
+%     checkerboard_3cond_task('Windowed', true, 'TriggerKey', {'space'})   % test
+%     checkerboard_3cond_task('ScreenWidth', 1920, 'ScreenHeight', 1080)   % real run
 
     here = fileparts(mfilename('fullpath'));
 
     p = inputParser;
     addParameter(p, 'TriggerKey', {'5', '5%', 't'});
-    addParameter(p, 'EventsFile', fullfile(here, '..', 'study_design', 'CheckerboardLR_events.tsv'));
+    addParameter(p, 'EventsFile', fullfile(here, '..', 'study_design', 'Checkerboard3Cond_events.tsv'));
     addParameter(p, 'Duration', []);
     addParameter(p, 'FlickerHz', 8);
     addParameter(p, 'Windowed', false);
@@ -71,11 +71,11 @@ function checkerboard_lr_task(varargin)
     logPath = opt.LogPath;
     if isempty(logPath)
         logPath = fullfile(here, 'logs', ...
-            sprintf('checkerboard_lr_task_%s.tsv', datestr(now, 'yyyymmdd_HHMMSS')));
+            sprintf('checkerboard_3cond_task_%s.tsv', datestr(now, 'yyyymmdd_HHMMSS')));
     end
 
     events = ptb_read_events_tsv(opt.EventsFile);
-    fprintf('[checkerboard_lr_task] loaded %d events from %s\n', height(events), opt.EventsFile);
+    fprintf('[checkerboard_3cond_task] loaded %d events from %s\n', height(events), opt.EventsFile);
 
     screenSize = [];
     if ~isempty(opt.ScreenWidth) && ~isempty(opt.ScreenHeight)
@@ -145,7 +145,7 @@ function checkerboard_lr_task(varargin)
             % flash, and the ON flash itself alternates pattern A/B
             % (black<->white inverse) so a given screen location genuinely
             % reverses polarity from one flash to the next -- same 4-phase
-            % cycle as checkerboard_task.m.
+            % cycle as checkerboard_1cond_task.m.
             phase = mod(floor(tInEvent * flickerHz), 4);
             if phase == 1
                 Screen('DrawTexture', win, texA.(trialType), [], destRects.(trialType));
@@ -177,7 +177,7 @@ function checkerboard_lr_task(varargin)
     end
 
     t0 = ptb_wait_for_trigger(win, opt.TriggerKey, 'Waiting for scanner trigger...');
-    fprintf('[checkerboard_lr_task] triggered at t0=%.3fs -- starting task\n', t0);
+    fprintf('[checkerboard_3cond_task] triggered at t0=%.3fs -- starting task\n', t0);
     ptb_run_block_loop(win, events, @stimFor, t0, opt.Duration, logPath);
 
     DrawFormattedText(win, 'Task complete -- thank you!', 'center', 'center', [1 1 1]);

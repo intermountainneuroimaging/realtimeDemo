@@ -49,8 +49,9 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 # name -> (config file, one-line description)
 TASKS = {
     'motor':           ('motor.toml',           'LEFT vs RIGHT finger tapping'),
-    'checkerboard':    ('checkerboard.toml',     'flickering checkerboard ON vs OFF'),
-    'checkerboard_lr': ('checkerboard_lr.toml',  'checkerboard CENTER vs LEFT vs RIGHT (3-way)'),
+    'checkerboard_1cond': ('checkerboard_1cond.toml', 'flickering checkerboard ON vs OFF'),
+    'checkerboard_3cond': ('checkerboard_3cond.toml', 'checkerboard CENTER vs LEFT vs RIGHT (3-way)'),
+    'checkerboard_2cond': ('checkerboard_2cond.toml', 'checkerboard LEFT vs RIGHT (no CENTER, shorter run)'),
     'gambling':        ('gambling.toml',         'blackjack WIN vs LOSE (tie as covariate)'),
 }
 
@@ -58,13 +59,14 @@ TASKS = {
 # activation actually falls rather than the generic auto-selected levels --
 # forwarded to taskActivation.py's --z-cuts, overriding the toml's zCuts for
 # that run. Motor cortex sits near the vertex (high z); visual cortex is
-# posterior/inferior (low z), same for checkerboard_lr's 3 positions. gambling
-# has no fixed region picked yet, so it's absent here and keeps using its
-# toml's own zCuts (currently auto).
+# posterior/inferior (low z), same for checkerboard_3cond's 3 positions (and
+# checkerboard_2cond's 2). gambling has no fixed region picked yet, so
+# it's absent here and keeps using its toml's own zCuts (currently auto).
 Z_CUTS = {
     'motor':           '0,16.25,32.5,48.75,65',
-    'checkerboard':    '-36,-22.75,-9.5,3.75,17',
-    'checkerboard_lr': '-36,-22.75,-9.5,3.75,17',
+    'checkerboard_1cond': '-36,-22.75,-9.5,3.75,17',
+    'checkerboard_3cond': '-36,-22.75,-9.5,3.75,17',
+    'checkerboard_2cond': '-36,-22.75,-9.5,3.75,17',
 }
 
 
@@ -85,6 +87,10 @@ def main():
                      help="OPT-IN, testing/demo only -- skip mcflirt (real accuracy tradeoff, "
                           "see taskActivation.py's --help) -- forwarded straight to its own "
                           "--skip-motion-correction")
+    ap.add_argument('--save-gif', action='store_true',
+                     help="OPT-IN -- assemble a replay-able activation GIF at end of run "
+                          "(off by default) -- forwarded straight to taskActivation.py's own "
+                          "--save-gif; see its --help for details")
     args = ap.parse_args()
 
     configFile, desc = TASKS[args.task]
@@ -98,6 +104,8 @@ def main():
         cmd += ['--plot-every-frame']
     if args.skip_motion_correction:
         cmd += ['--skip-motion-correction']
+    if args.save_gif:
+        cmd += ['--save-gif']
     z_cuts = Z_CUTS.get(args.task)
     if z_cuts:
         # --z-cuts=value (one token), not ['--z-cuts', value] -- a value

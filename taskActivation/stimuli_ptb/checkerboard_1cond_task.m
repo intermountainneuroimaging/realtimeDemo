@@ -1,12 +1,12 @@
-function checkerboard_task(varargin)
-%CHECKERBOARD_TASK Psychtoolbox presentation of a flickering-checkerboard
+function checkerboard_1cond_task(varargin)
+%CHECKERBOARD_1COND_TASK Psychtoolbox presentation of a flickering-checkerboard
 %   visual localizer: alternating ON (flickering full-contrast checkerboard)
 %   / OFF (fixation only) blocks. Shows a brief task-instructions screen
 %   (dismiss with 1/2, or Escape to abort), waits for the scanner trigger,
-%   then presents ../study_design/Checkerboard_events.tsv (rest, checkerboard,
+%   then presents ../study_design/Checkerboard1Cond_events.tsv (rest, checkerboard,
 %   x6, + a trailing rest block; 20s blocks, 13 blocks, 260s total). Matches
 %   this project's real-time GLM convention: point taskActivation.toml's
-%   eventsFile at Checkerboard_events.tsv and set glmCondA='checkerboard',
+%   eventsFile at Checkerboard1Cond_events.tsv and set glmCondA='checkerboard',
 %   glmCondB='' (a single-condition beta map -- there's no second condition
 %   to contrast against) to analyze it live.
 %
@@ -16,7 +16,7 @@ function checkerboard_task(varargin)
 %                     the shifted-symbol name PTB gives that key; run
 %                     test_ptb_install.m and press your actual trigger/box
 %                     once to see exactly what name it reports if unsure)
-%     'EventsFile'    path to events.tsv (default: Checkerboard_events.tsv)
+%     'EventsFile'    path to events.tsv (default: Checkerboard1Cond_events.tsv)
 %     'Duration'      total run length in seconds (default: end of the last
 %                     event); pass nVols*TR to also show trailing rest
 %     'FlickerHz'     how many times per second the checkerboard's state
@@ -36,17 +36,17 @@ function checkerboard_task(varargin)
 %     'SkipSyncTests' true to disable PTB's flip-timing sync tests, for
 %                     testing on a non-research display (default false)
 %     'LogPath'       timing log path (default:
-%                     stimuli_ptb/logs/checkerboard_task_<timestamp>.tsv)
+%                     stimuli_ptb/logs/checkerboard_1cond_task_<timestamp>.tsv)
 %
 %   Example:
-%     checkerboard_task('Windowed', true, 'TriggerKey', {'space'})   % test
-%     checkerboard_task('ScreenWidth', 1920, 'ScreenHeight', 1080)   % real run
+%     checkerboard_1cond_task('Windowed', true, 'TriggerKey', {'space'})   % test
+%     checkerboard_1cond_task('ScreenWidth', 1920, 'ScreenHeight', 1080)   % real run
 
     here = fileparts(mfilename('fullpath'));
 
     p = inputParser;
     addParameter(p, 'TriggerKey', {'5', '5%', 't'});
-    addParameter(p, 'EventsFile', fullfile(here, '..', 'study_design', 'Checkerboard_events.tsv'));
+    addParameter(p, 'EventsFile', fullfile(here, '..', 'study_design', 'Checkerboard1Cond_events.tsv'));
     addParameter(p, 'Duration', []);
     addParameter(p, 'FlickerHz', 8);
     addParameter(p, 'Windowed', false);
@@ -60,11 +60,11 @@ function checkerboard_task(varargin)
     logPath = opt.LogPath;
     if isempty(logPath)
         logPath = fullfile(here, 'logs', ...
-            sprintf('checkerboard_task_%s.tsv', datestr(now, 'yyyymmdd_HHMMSS')));
+            sprintf('checkerboard_1cond_task_%s.tsv', datestr(now, 'yyyymmdd_HHMMSS')));
     end
 
     events = ptb_read_events_tsv(opt.EventsFile);
-    fprintf('[checkerboard_task] loaded %d events from %s\n', height(events), opt.EventsFile);
+    fprintf('[checkerboard_1cond_task] loaded %d events from %s\n', height(events), opt.EventsFile);
 
     screenSize = [];
     if ~isempty(opt.ScreenWidth) && ~isempty(opt.ScreenHeight)
@@ -123,7 +123,7 @@ function checkerboard_task(varargin)
     end
 
     t0 = ptb_wait_for_trigger(win, opt.TriggerKey, 'Waiting for scanner trigger...');
-    fprintf('[checkerboard_task] triggered at t0=%.3fs -- starting task\n', t0);
+    fprintf('[checkerboard_1cond_task] triggered at t0=%.3fs -- starting task\n', t0);
     ptb_run_block_loop(win, events, @stimFor, t0, opt.Duration, logPath);
 
     DrawFormattedText(win, 'Task complete -- thank you!', 'center', 'center', [1 1 1]);

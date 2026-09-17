@@ -68,7 +68,7 @@ def ellipsoid_brain(shape):
 def synthetic_series(events, nVols, TR, condA, condB, shape,
                      seed=0, base=1200.0, resp=0.05, condC=None):
     """4D (rows, cols, slices, time) with two (or three, if `condC` is given
-    -- TASK-SPECIFIC, for checkerboard_lr's glmCondC 3-way design, see
+    -- TASK-SPECIFIC, for checkerboard_3cond's glmCondC 3-way design, see
     taskActivation.py's own glmCondC comment) task-driven regions,
     HRF-convolved from the real events, on an ellipsoid brain + noise.
     `shape` is the reference DICOM's (rows, cols, nSlices)."""
@@ -220,7 +220,7 @@ def main(argv=None):
     task = str(cfg.get('taskName', 'HcpMotor'))
     condA = str(cfg.get('glmCondA', 'left_hand'))
     condB = str(cfg.get('glmCondB', 'right_hand'))
-    condC = str(cfg.get('glmCondC', '') or '') or None   # TASK-SPECIFIC (checkerboard_lr only)
+    condC = str(cfg.get('glmCondC', '') or '') or None   # TASK-SPECIFIC (checkerboard_3cond only)
     events_file = str(cfg.get('eventsFile', f'{task}_acq-ap_events.tsv'))
     out_dir = args.out or os.path.join(PROJECT_ROOT, 'dicomDir')
     os.makedirs(out_dir, exist_ok=True)

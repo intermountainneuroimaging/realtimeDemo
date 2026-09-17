@@ -1,38 +1,32 @@
-##### Configuration file: checkerboard_lr (3-position checkerboard localizer) #####
+##### Configuration file: checkerboard_1cond (flickering-checkerboard ON vs OFF) #####
 #
 # Real-time, registration-free visual localizer, streaming DICOMs from a
 # real (or mock) scanner via dicomDir/. Pairs with
-# stimuli_ptb/checkerboard_lr_task.m (Psychtoolbox) or
-# study_design/CheckerboardLR_events.tsv presented by any other means: a
-# checkerboard patch flickers ON/OFF in one of three screen positions per
-# block -- CENTER, LEFT, or RIGHT -- 12s blocks, 4 reps of each + rest
-# between every block, 300s total.
+# stimuli_ptb/checkerboard_1cond_task.m (Psychtoolbox) or
+# study_design/Checkerboard1Cond_events.tsv presented by any other means: 20s
+# ON/OFF blocks of a flickering full-contrast checkerboard vs fixation (6
+# reps + a trailing rest block, 260s total).
 #
-# THREE-WAY CONTRAST (task-specific -- not a generic mechanism every
-# conf/*.toml can use): glmCondC is a NEW key only this task's pipeline
-# understands. When it's set, taskActivation.py switches its live mosaic
-# from the usual single condA-vs-condB diverging map to THREE separate
-# one-vs-rest contrasts overlaid on the same brain slices -- glmCondA (here,
-# center) vs the mean of the other two in BLUE, glmCondB (left) in RED,
-# glmCondC (right) in GREEN. See taskActivation.py's own glmCondC comment.
-# The end-of-run activation GIF isn't supported for this 3-way mode (see
-# saveGif below).
-#
-# Run: python run_task.py checkerboard_lr   (see ../run_task.py / ../quickstart.sh checkerboard_lr)
+# Run: python run_task.py checkerboard_1cond   (see ../run_task.py / ../quickstart.sh checkerboard_1cond)
 
-title = "Real-Time fMRI Task Activation (checkerboard CENTER vs LEFT vs RIGHT)"
+title = "Real-Time fMRI Task Activation (checkerboard ON vs OFF)"
 
 # ---- generic real-time task-activation demo ----
 
-taskName = "CheckerboardLR"
+taskName = "Checkerboard1Cond"
 
 # events file (shipped) used to build the per-volume design at runtime.
-eventsFile = "CheckerboardLR_events.tsv"
+eventsFile = "Checkerboard1Cond_events.tsv"
 
-# condition display names -- three conditions of interest, each contrasted
-# against the mean of the other two (see the THREE-WAY CONTRAST note above).
-# 'rest' is auto-detected as the GLM's implicit baseline, same as every
-# other task here.
+# ON vs OFF: glmCondB is deliberately empty here. "OFF" in this design is
+# the 'rest' trial_type, which is auto-detected as the GLM's IMPLICIT
+# baseline (see is_rest_type() in utils/rt_analysis.py) rather than a named
+# regressor of its own -- so it can't be passed as glmCondB directly. With
+# glmCondB empty, taskActivation.py plots the glmCondA beta weight instead
+# of a condA-condB contrast (see taskActivation.py's glmCondB comment) --
+# which for a two-condition ON/rest design like this one IS exactly the ON
+# vs OFF contrast: activation during checkerboard blocks relative to the
+# implicit rest/OFF baseline in the same GLM.
 #
 # Not configured here (fixed in taskActivation.py -- not deployment-specific):
 # TR is always inferred from the first real DICOM's RepetitionTime; hrf_delay
@@ -61,14 +55,11 @@ demoStep = 0               # TESTING ONLY: artificial per-volume delay (s) passe
 # ---- analysis (registration-free) ----
 fwhm = 5                   # smoothing FWHM (mm)
 mapThreshPct = 0.5         # %-signal-change threshold for the per-frame activation overlay
-contrastThresh = 2.0       # GLM map threshold (z units when glmZscore=true) -- applied to
-                           # each of the three one-vs-rest maps independently
+contrastThresh = 2.0       # GLM map threshold (z units when glmZscore=true)
 driftOrder = 1             # polynomial drift terms in the GLM (per-run)
-glmCondA = "center"        # blue: center vs mean(left, right)
-glmCondB = "left"          # red:  left vs mean(center, right)
-glmCondC = "right"         # green: right vs mean(center, left) -- see the THREE-WAY
-                           # CONTRAST note above; leave unset/empty for every other task's toml
-glmZscore = true           # z-score each of the three maps across voxels
+glmCondA = "checkerboard"  # GLM condA beta weight (ON vs implicit rest/OFF baseline)
+glmCondB = ""              # empty -- see the ON-vs-OFF note above
+glmZscore = true           # z-score the GLM map across voxels
 restTypes = []             # trial_types to treat as implicit baseline; [] = auto-detect (rest/fixation/...)
 zCuts = []                 # fixed axial slice positions in mm, e.g. [-20,-5,10,25,40,55]; [] = auto
                            # ([] also auto-picks the slice COUNT, fixed at 6 in taskActivation.py)
@@ -81,18 +72,18 @@ maskFraction = 0.12
 # ---- realtime display ----
 liveEveryTR = 1            # write a live update every N volumes
 liveDirName = "live"       # subfolder of rt-cloud/outDir/ the viewer watches
-saveGif = false            # the end-of-run activation-replay GIF only knows how to re-render
-                           # the standard single condA-vs-condB bundle format -- not yet
-                           # extended for this task's 3-map bundles, so it's disabled here
-                           # rather than producing a broken/empty GIF
-gifFps = 8                 # GIF playback speed (frames/sec) -- unused while saveGif=false
+# saveGif is CLI-only now (default off) -- pass taskActivation.py's own
+# --save-gif (or quickstart.sh's --save-gif, which forwards it) to assemble
+# every saved frame into a replay-able outDir/live/activation_run<N>.gif at
+# end of run; not a toml setting anymore.
+gifFps = 8                 # GIF playback speed (frames/sec) -- only relevant if --save-gif is passed
 
-# ---- web Data Plots tab (peak-ROI %SC from the FIRST block, 'center') ----
-plotTitle = 'Checkerboard localizer (peak-ROI % signal change, first center block)'
+# ---- web Data Plots tab (ROI %SC, single condition -- no A-minus-B here) ----
+plotTitle = 'Checkerboard ON response (ROI % signal change)'
 plotXLabel = 'volume #'
 plotYLabel = 'ROI % signal change'
 plotXRangeLow = 0
-plotXRangeHigh = 150       # rough (300s design / ~TR=2s); the analysis itself uses the
+plotXRangeHigh = 140       # rough (260s design / ~TR=2s); the analysis itself uses the
                            # real inferred TR regardless -- this only sizes the web widget
 plotYRangeLow = -2
 plotYRangeHigh = 4

@@ -15,7 +15,7 @@ function blackjack_task(varargin)
 %   "BUST" if the cosmetic hand's own blackjack value (see hand_value()
 %   below) is over 21, otherwise "DEALER WON". Which outcome
 %   appears and when is entirely driven by the events.tsv, exactly
-%   like the original gambling_task.m's guess-doesn't-change-the-outcome
+%   like the original obsolete/stimuli_ptb/gambling_task.m's guess-doesn't-change-the-outcome
 %   design -- the displayed cards and the hit/stay choice are cosmetic only
 %   and never alter the scheduled result, matching conf/gambling.toml's
 %   glmCondA=win / glmCondB=lose contrast (tie as a covariate) for live
@@ -43,7 +43,7 @@ function blackjack_task(varargin)
 %   display-only change (an incentive to actually respond each trial); the
 %   events.tsv / GLM design driving the real-time analysis are unaffected.
 %
-%   RESPONSES ARE RECORDED VIA KbQueue, NOT KbCheck: see gambling_task.m's
+%   RESPONSES ARE RECORDED VIA KbQueue, NOT KbCheck: see obsolete/stimuli_ptb/gambling_task.m's
 %   own header comment for why (an MRI response box's brief keydown pulse
 %   can otherwise fall between two per-frame KbCheck calls and be missed).
 %   The hit/stay response is logged in the timing log's response_key /

@@ -18,7 +18,7 @@ function ptb_kbqueue_setup(keyNames)
 %   and ptb_kbqueue_teardown.m to stop/clean up at the end of a run.
 %
 %   Call this ONCE, before the period during which responses matter (the
-%   whole run, in gambling_task.m) -- not once per trial.
+%   whole run, in blackjack_task.m) -- not once per trial.
 
     if nargin < 1 || isempty(keyNames)
         keyNames = {};

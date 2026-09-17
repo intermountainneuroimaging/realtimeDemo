@@ -1,6 +1,9 @@
 """-----------------------------------------------------------------------------
 stimuli/common.py -- shared PsychoPy helpers for the task scripts in this
-folder (hcp_motor_task.py, hcp_gambling_task.py).
+folder (generic_motor_task.py, checkerboard_1cond_task.py,
+checkerboard_2cond_task.py, checkerboard_3cond_task.py, blackjack_task.py --
+also used by obsolete/stimuli/hcp_motor_task.py and hcp_gambling_task.py
+before they were archived, see obsolete/README.md).
 
 These run on the STIMULUS computer, presenting the task to the subject while
 taskActivation.py (in the container, on the analysis side) analyzes the

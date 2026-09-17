@@ -10,8 +10,9 @@ is stimuli_ptb/motor_task.m -- both present the exact same events.tsv.
 Blocks: 30s LEFT FINGER / RIGHT FINGER tapping blocks separated by 10s REST
 blocks (3 reps each + a trailing rest block, 250s total) -- exactly
 matching taskActivation.py's GLM design (glmCondA=left_finger,
-glmCondB=right_finger). Unlike hcp_motor_task.py's original 5-condition HCP
-dataset, there are no "_cue" get-ready periods here -- rest between blocks
+glmCondB=right_finger). Unlike the original 5-condition HCP dataset (now
+archived in obsolete/stimuli/hcp_motor_task.py), there are no "_cue"
+get-ready periods here -- rest between blocks
 doubles as the get-ready period.
 
 Shows a brief task-instructions screen (task description + the subject's

@@ -62,9 +62,11 @@ maskFraction = 0.12
 # ---- realtime display ----
 liveEveryTR = 1            # write a live update every N volumes
 liveDirName = "live"       # subfolder of rt-cloud/outDir/ the viewer watches
-saveGif = true             # at end of run, assemble every saved frame into a
-                           # replay-able outDir/live/activation_run<N>.gif
-gifFps = 8                 # GIF playback speed (frames/sec)
+# saveGif is CLI-only now (default off) -- pass taskActivation.py's own
+# --save-gif (or quickstart.sh's --save-gif, which forwards it) to assemble
+# every saved frame into a replay-able outDir/live/activation_run<N>.gif at
+# end of run; not a toml setting anymore.
+gifFps = 8                 # GIF playback speed (frames/sec) -- only relevant if --save-gif is passed
 
 # ---- web Data Plots tab (LEFT-ROI %SC minus RIGHT-ROI %SC) ----
 plotTitle = 'Lateralization (LEFT-ROI minus RIGHT-ROI, % signal change)'

@@ -4,9 +4,13 @@ blackjack_task.py -- simple PsychoPy presentation of this project's own
 two-card blackjack task (study_design/Blackjack_events.tsv, the same file
 taskActivation.py's live analysis reads via conf/gambling.toml). The
 Psychtoolbox equivalent is stimuli_ptb/blackjack_task.m -- both present the
-exact same events.tsv. The original HCP card-guess task (hcp_gambling_task.py
-/ gambling_task.m, HcpGambling_acq-ap_events.tsv) is untouched and still used
-by tutorial/'s offline validation against the real ds000244 data.
+exact same events.tsv. The original HCP card-guess task
+(obsolete/stimuli/hcp_gambling_task.py / obsolete/stimuli_ptb/gambling_task.m,
+obsolete/study_design/HcpGambling_acq-ap_events.tsv) is archived -- not
+deployed to any conf/*.toml -- but tutorial/'s own offline validation
+against the real ds000244 data uses its own separate copy of the events
+file (tutorial/study_design/HcpGambling_acq-ap_events.tsv) and is
+unaffected.
 
 Each trial (a fixed 3.0s in Blackjack_events.tsv): two cards are dealt
 face-up, and the subject may press '1' to HIT or '2' to STAY, any time
@@ -59,7 +63,8 @@ off-screen or overlaps at any resolution, whether the hand has two cards or
 three.
 
 This script uses its OWN per-frame render loop (rather than common.py's
-shared run_events()) for the same reason gambling_task.m uses its own loop
+shared run_events()) for the same reason obsolete/stimuli_ptb/gambling_task.m
+uses its own loop
 instead of the shared Psychtoolbox one: hit/stay needs per-frame key
 handling and a hand of cards that can change mid-trial, plus a response log
 (response_key / response_time_s) that common.run_events()'s fixed log
@@ -213,7 +218,7 @@ def deal_hit_card(hand, trial_type):
 
 
 def build_stims(win):
-    """Stims reused across frames -- see hcp_motor_task's build_stims for why
+    """Stims reused across frames -- see generic_motor_task.py's build_stims for why
     (PsychoPy stims are drawn every frame, so avoid rebuilding text/geometry
     each time). Card-hand text changes every trial (and once more on a hit),
     so its stim's `.text` is reassigned (and refit -- see fit_hand() in

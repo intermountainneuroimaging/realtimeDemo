@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """-----------------------------------------------------------------------------
-checkerboard_task.py -- simple PsychoPy presentation of this project's own
-flickering-checkerboard visual localizer (study_design/Checkerboard_events.tsv,
+checkerboard_1cond_task.py -- simple PsychoPy presentation of this project's own
+flickering-checkerboard visual localizer (study_design/Checkerboard1Cond_events.tsv,
 the same file taskActivation.py's live analysis reads via conf/checkerboard.toml).
-The Psychtoolbox equivalent is stimuli_ptb/checkerboard_task.m -- both present
+The Psychtoolbox equivalent is stimuli_ptb/checkerboard_1cond_task.m -- both present
 the exact same events.tsv and the same flicker: OFF (blank) -> ON (pattern A)
 -> OFF -> ON (pattern B, the black<->white inverse of A) -> repeat, each
 state lasting 1/flicker_hz, so a given screen location genuinely goes
 black, then white, then black -- not two checkerboards swapped directly
 with no blank in between (which can look like a static image if the two
-patterns aren't visually distinct at a glance). See checkerboard_lr_task.py
+patterns aren't visually distinct at a glance). See checkerboard_3cond_task.py
 for the 3-position on/off (single-pattern) variant.
 
 Blocks: alternating 20s rest (fixation only) / 20s checkerboard (flickering)
@@ -22,9 +22,9 @@ goal; dismiss with 1/2, or Escape to abort) before waiting for the scanner
 trigger.
 
 Run (needs `pip install psychopy` and a display):
-    python checkerboard_task.py                    # waits for scanner trigger '5' or 't'
-    python checkerboard_task.py --windowed          # not fullscreen, for testing
-    python checkerboard_task.py --trigger-key space # press space yourself to start
+    python checkerboard_1cond_task.py                    # waits for scanner trigger '5' or 't'
+    python checkerboard_1cond_task.py --windowed          # not fullscreen, for testing
+    python checkerboard_1cond_task.py --trigger-key space # press space yourself to start
 -----------------------------------------------------------------------------"""
 import os
 import argparse
@@ -33,14 +33,14 @@ import numpy as np
 import common
 
 HERE = os.path.dirname(os.path.realpath(__file__))
-DEFAULT_EVENTS = os.path.join(common.PROJECT_ROOT, 'study_design', 'Checkerboard_events.tsv')
+DEFAULT_EVENTS = os.path.join(common.PROJECT_ROOT, 'study_design', 'Checkerboard1Cond_events.tsv')
 
 
 def build_checker_textures(win, n_squares=16, patch_fraction=0.8):
     """Build the two phase-inverted checkerboard patches (ON: black<->white
     reversal) as GratingStims with a custom numpy texture, sized as a
     fraction of the window's shorter dimension -- mirrors
-    checkerboard_task.m's pixel-level texOn/texOff construction, but in
+    checkerboard_1cond_task.m's pixel-level texOn/texOff construction, but in
     PsychoPy 'height' units so it scales to any window size the same way
     the rest of this project's PsychoPy stims do.
 
@@ -90,10 +90,10 @@ def main():
     from psychopy import visual, core
 
     events = common.read_events_tsv(args.events)
-    print(f"[checkerboard] loaded {len(events)} events from {args.events}")
+    print(f"[checkerboard_1cond] loaded {len(events)} events from {args.events}")
 
     log_path = args.log or os.path.join(
-        HERE, 'logs', f"checkerboard_{datetime.datetime.now():%Y%m%d_%H%M%S}.tsv")
+        HERE, 'logs', f"checkerboard_1cond_{datetime.datetime.now():%Y%m%d_%H%M%S}.tsv")
 
     win = visual.Window(fullscr=not args.windowed, color='black', units='height')
     tex_on, tex_off = build_checker_textures(win)
@@ -131,7 +131,7 @@ def main():
 
     clock, t0 = common.wait_for_trigger(win, trigger_keys=args.trigger_key.split(','),
                                         instructions='Waiting for scanner trigger...')
-    print(f"[checkerboard] triggered at t0={t0:.3f}s -- starting task")
+    print(f"[checkerboard_1cond] triggered at t0={t0:.3f}s -- starting task")
     common.run_events(win, events, stim_for, clock, t0,
                       run_duration=args.duration, log_path=log_path)
 

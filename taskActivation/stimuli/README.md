@@ -14,21 +14,25 @@ task timing in MATLAB.
 
 ## Why this matters: one source of truth for timing
 
-`hcp_motor_task.py`, `generic_motor_task.py`, `checkerboard_task.py`,
-`checkerboard_lr_task.py`, `hcp_gambling_task.py`, and `blackjack_task.py`
-read the exact same `study_design/*_events.tsv` files `taskActivation.py`'s
-real-time GLM design is built from. There's no separate, hand-copied timing
-table to keep in sync — whatever the subject is actually shown **is** what
-the analysis assumes happened, by construction.
+`generic_motor_task.py`, `checkerboard_1cond_task.py`,
+`checkerboard_2cond_task.py`, `checkerboard_3cond_task.py`, and
+`blackjack_task.py` read the exact same `study_design/*_events.tsv` files
+`taskActivation.py`'s real-time GLM design is built from. There's no
+separate, hand-copied timing table to keep in sync — whatever the subject
+is actually shown **is** what the analysis assumes happened, by
+construction.
 
 | Script | Events file | Conditions |
 |---|---|---|
-| `hcp_motor_task.py` | `../study_design/HcpMotor_acq-ap_events.tsv` | left/right hand, left/right foot, tongue (each with a brief get-ready cue) |
 | `generic_motor_task.py` | `../study_design/GenericMotorLR_events.tsv` | this project's own left/right finger-tapping design (`conf/motor.toml`) -- 30s tapping blocks separated by 10s rest, no get-ready cues; the Psychtoolbox equivalent is `../stimuli_ptb/motor_task.m` |
-| `checkerboard_task.py` | `../study_design/Checkerboard_events.tsv` | this project's own flickering-checkerboard ON/OFF localizer (`conf/checkerboard.toml`) -- 20s ON/OFF blocks, genuine OFF/pattern-A/OFF/pattern-B flicker (not two patterns swapped with no blank); the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_task.m` |
-| `checkerboard_lr_task.py` | `../study_design/CheckerboardLR_events.tsv` | this project's own 3-position checkerboard localizer (`conf/checkerboard_lr.toml`) -- CENTER is a small foveal square, LEFT/RIGHT are full-height bars flush to the screen edge, same OFF/A/OFF/B flicker as `checkerboard_task.py`, 3-way one-vs-rest GLM contrast; the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_lr_task.m` |
+| `checkerboard_1cond_task.py` | `../study_design/Checkerboard1Cond_events.tsv` | this project's own flickering-checkerboard ON/OFF localizer (`conf/checkerboard_1cond.toml`) -- 20s ON/OFF blocks, genuine OFF/pattern-A/OFF/pattern-B flicker (not two patterns swapped with no blank); the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_1cond_task.m` |
+| `checkerboard_2cond_task.py` | `../study_design/Checkerboard2Cond_events.tsv` | the LEFT/RIGHT half of `checkerboard_3cond_task.py` (`conf/checkerboard_2cond.toml`) -- no CENTER condition, an ordinary 2-condition GLM contrast, shorter run; the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_2cond_task.m` |
+| `checkerboard_3cond_task.py` | `../study_design/Checkerboard3Cond_events.tsv` | this project's own 3-position checkerboard localizer (`conf/checkerboard_3cond.toml`) -- CENTER is a small foveal square, LEFT/RIGHT are full-height bars flush to the screen edge, same OFF/A/OFF/B flicker as `checkerboard_1cond_task.py`, 3-way one-vs-rest GLM contrast; the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_3cond_task.m` |
 | `blackjack_task.py` | `../study_design/Blackjack_events.tsv` | this project's own two-card blackjack design (`conf/gambling.toml`) -- hit(1)/stay(2) on a dealt hand, then a pre-scripted win/lose/tie outcome; the Psychtoolbox equivalent is `../stimuli_ptb/blackjack_task.m` |
-| `hcp_gambling_task.py` | `../study_design/HcpGambling_acq-ap_events.tsv` | the original HCP card-guess task, unchanged: reward, punishment, neutral -- kept as-is for `tutorial/`'s offline validation against the real ds000244 data; not wired to any `conf/*.toml` contrast anymore |
+
+The original HCP motor and card-guess presentation scripts
+(`hcp_motor_task.py`, `hcp_gambling_task.py`) have been archived — see
+[`../obsolete/README.md`](../obsolete/README.md).
 
 ## Install and test PsychoPy
 
@@ -94,30 +98,31 @@ keypress is detected. A `[warn]` at step 3 with no `[FAIL]` just means no key
 was pressed in time — harmless, but see the macOS Accessibility note above
 if that keeps happening once you're actually trying to use a keyboard.
 
-Once that passes, you're ready to run `hcp_motor_task.py` /
-`generic_motor_task.py` / `checkerboard_task.py` / `checkerboard_lr_task.py`
-/ `blackjack_task.py` / `hcp_gambling_task.py` below.
+Once that passes, you're ready to run `generic_motor_task.py` /
+`checkerboard_1cond_task.py` / `checkerboard_2cond_task.py` /
+`checkerboard_3cond_task.py` / `blackjack_task.py` below.
 
 ## Running
 
 ```bash
 cd stimuli
-python hcp_motor_task.py
 python generic_motor_task.py
-python checkerboard_task.py
-python checkerboard_lr_task.py
+python checkerboard_1cond_task.py
+python checkerboard_2cond_task.py
+python checkerboard_3cond_task.py
 python blackjack_task.py
-python hcp_gambling_task.py
 ```
 
-All six:
-- `generic_motor_task.py`, `checkerboard_task.py`, `checkerboard_lr_task.py`,
-  and `blackjack_task.py` **show a task-instructions screen first** — a
-  brief description of the task and the subject's goal, dismissed with
-  button 1 or 2 (or Escape to abort before the run even starts) — the same
-  digit buttons used for real responses, not a keyboard-only SPACE bar the
-  subject won't have in the scanner; the text itself tells them to ask the
-  experimenter with questions and press any button when ready — see
+All five:
+- `generic_motor_task.py`, `checkerboard_1cond_task.py`,
+  `checkerboard_2cond_task.py`, `checkerboard_3cond_task.py`, and
+  `blackjack_task.py` **show a task-instructions screen first** — a brief
+  description of the task and
+  the subject's goal, dismissed with button 1 or 2 (or Escape to abort
+  before the run even starts) — the same digit buttons used for real
+  responses, not a keyboard-only SPACE bar the subject won't have in the
+  scanner; the text itself tells them to ask the experimenter with
+  questions and press any button when ready — see
   `common.show_instructions()` below. It measures the real rendered
   text (`TextStim.boundingBox`) against the real window size and shrinks
   the font until the whole block fits, so the instructions stay fully
@@ -139,47 +144,52 @@ All six:
 
 ## What each task looks like
 
-**`hcp_motor_task.py`** — a brief gray "get ready: LEFT HAND"-style cue,
-then the same instruction in bold green for the movement block itself;
-plain fixation (`+`) during rest. Matches `taskActivation.py`'s
-`glmCondA=left_hand` / `glmCondB=right_hand` contrast, with the other body
-parts (and every `*_cue`) becoming GLM covariates, exactly as
-[README.md](../README.md#how-it-works) describes.
-
 **`generic_motor_task.py`** — bold green "LEFT FINGER" / "RIGHT FINGER"
 during the 30s tapping blocks; plain fixation (`+`) during the 10s rest
 blocks between them (no get-ready cue -- rest doubles as the lead-in).
 Matches `conf/motor.toml`'s `glmCondA=left_finger` / `glmCondB=right_finger`
 contrast for live analysis.
 
-**`checkerboard_task.py`** — a flickering black<->white checkerboard patch
-centered on screen during 20s ON blocks: a genuine flicker (`--flicker-hz`,
-default 8) that goes OFF (blank) -> ON (pattern A) -> OFF -> ON (pattern B,
-the black<->white inverse of A) -> repeat, each state lasting
-1/flicker_hz -- so a given screen location truly cycles black -> white ->
-black, rather than swapping directly between two checkerboards with no
-blank in between (which can look like a static image). Alternates with
-plain fixation (`+`) during 20s OFF/rest blocks; 6 reps + a trailing rest
-block, 260s total. Matches `conf/checkerboard.toml`'s
+**`checkerboard_1cond_task.py`** — a flickering black<->white checkerboard
+patch centered on screen during 20s ON blocks: a genuine flicker
+(`--flicker-hz`, default 8) that goes OFF (blank) -> ON (pattern A) -> OFF
+-> ON (pattern B, the black<->white inverse of A) -> repeat, each state
+lasting 1/flicker_hz -- so a given screen location truly cycles black ->
+white -> black, rather than swapping directly between two checkerboards
+with no blank in between (which can look like a static image). Alternates
+with plain fixation (`+`) during 20s OFF/rest blocks; 6 reps + a trailing
+rest block, 260s total. Matches `conf/checkerboard_1cond.toml`'s
 `glmCondA=checkerboard` / `glmCondB=''` (ON vs the implicit rest baseline)
 contrast for live analysis. The Psychtoolbox equivalent is
-`../stimuli_ptb/checkerboard_task.m`.
+`../stimuli_ptb/checkerboard_1cond_task.m`.
 
-**`checkerboard_lr_task.py`** — the same OFF/A/OFF/B flicker as
-`checkerboard_task.py` (`--flicker-hz`, default 8), shown in one of three
-screen positions per 12s block: CENTER, LEFT, or RIGHT. CENTER is a SQUARE
-(its height set equal to its own width, not the window height) centered on
-screen, so it stimulates only the fovea; LEFT and RIGHT are full
-window-height BARS, anchored flush against the window's left/right edge
-respectively (no gap), so each reaches as far into the periphery as the
-window allows. A `+` fixation cross stays visible on **every** frame of
-**every** condition (including rest, and every OFF phase) so the subject
-can hold central gaze while LEFT/RIGHT stimulate the visual periphery.
-25 blocks (rest/center/rest/left/rest/right x4 + trailing rest), 300s
-total. Matches `conf/checkerboard_lr.toml`'s 3-way one-vs-rest GLM
-contrast (`glmCondA=center` / `glmCondB=left` / `glmCondC=right`, each
-contrasted against the mean of the other two) for live analysis. The
-Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_lr_task.m`.
+**`checkerboard_2cond_task.py`** — the LEFT/RIGHT half of
+`checkerboard_3cond_task.py`, with the CENTER condition (and its associated
+rest block each rep) dropped entirely: same OFF/A/OFF/B flicker, same
+full window-height bars flush to the screen edge, same fixation-cross
+behavior, but only 2 conditions and a shorter run. 17 blocks
+(rest/left/rest/right x4 + trailing rest), 204s total. Since it's an
+ordinary 2-condition design, it matches `taskActivation.py`'s standard
+`glmCondA=left` / `glmCondB=right` contrast (`conf/checkerboard_2cond.toml`)
+— not the task-specific 3-way mode `checkerboard_3cond.toml` uses. The
+Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_2cond_task.m`.
+
+**`checkerboard_3cond_task.py`** — the same OFF/A/OFF/B flicker as
+`checkerboard_1cond_task.py` (`--flicker-hz`, default 8), shown in one of
+three screen positions per 12s block: CENTER, LEFT, or RIGHT. CENTER is a
+SQUARE (its height set equal to its own width, not the window height)
+centered on screen, so it stimulates only the fovea; LEFT and RIGHT are
+full window-height BARS, anchored flush against the window's left/right
+edge respectively (no gap), so each reaches as far into the periphery as
+the window allows. A `+` fixation cross stays visible on **every** frame
+of **every** condition (including rest, and every OFF phase) so the
+subject can hold central gaze while LEFT/RIGHT stimulate the visual
+periphery. 25 blocks (rest/center/rest/left/rest/right x4 + trailing
+rest), 300s total. Matches `conf/checkerboard_3cond.toml`'s 3-way
+one-vs-rest GLM contrast (`glmCondA=center` / `glmCondB=left` /
+`glmCondC=right`, each contrasted against the mean of the other two) for
+live analysis. The Psychtoolbox equivalent is
+`../stimuli_ptb/checkerboard_3cond_task.m`.
 
 **`blackjack_task.py`** — each 3.0s trial deals two cards face-up, with a
 value that fits the trial's own pre-scripted outcome (see
@@ -217,14 +227,6 @@ hit/stay key handling and a `response_key`/`response_time_s` log, mirroring
 `stimuli_ptb/blackjack_task.m`'s own reasons for not using its shared loop
 helper either) — see its own module docstring for details.
 
-**`hcp_gambling_task.py`** — the original HCP card-guess task, unchanged:
-each trial briefly shows a face-down card ("Higher or Lower? press any
-button"), then reveals the outcome: green `+$1.00` (reward), red `−$0.50`
-(punishment), or gray `$0.00` (neutral). As in the real HCP task, the guess
-doesn't actually change the outcome. Not wired to any `conf/*.toml` contrast
-anymore (see the task table above) — run it directly, or via `tutorial/`'s
-offline validation.
-
 ## Files
 
 - `common.py` — shared helpers: `show_instructions()` (shows a task
@@ -238,9 +240,9 @@ offline validation.
   handles rest gaps, timing-error logging, and Escape-to-abort), and a
   re-export of `read_events_tsv()`. Not used by the live analysis pipeline
   itself — only by the task scripts.
-- `hcp_motor_task.py`, `generic_motor_task.py`, `checkerboard_task.py`,
-  `checkerboard_lr_task.py`, `blackjack_task.py`, `hcp_gambling_task.py` —
-  the six task scripts described above.
+- `generic_motor_task.py`, `checkerboard_1cond_task.py`,
+  `checkerboard_2cond_task.py`, `checkerboard_3cond_task.py`,
+  `blackjack_task.py` — the five task scripts described above.
 - `test_psychopy_install.py` — standalone smoke test (see "Install and test
   PsychoPy" above); no events.tsv or trigger involved, just confirms the
   install itself works.

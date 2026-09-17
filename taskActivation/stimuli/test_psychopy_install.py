@@ -2,9 +2,11 @@
 """-----------------------------------------------------------------------------
 test_psychopy_install.py -- minimal smoke test to confirm PsychoPy is
 installed AND its display backend actually works, before running
-hcp_motor_task.py / hcp_gambling_task.py for real. A successful `pip install`
-doesn't guarantee this -- the window backend (pyglet by default) is the part
-that most often fails, silently or not, depending on the OS/GPU drivers.
+generic_motor_task.py / checkerboard_1cond_task.py / checkerboard_2cond_task.py
+/ checkerboard_3cond_task.py / blackjack_task.py for real. A successful
+`pip install` doesn't guarantee this -- the window backend (pyglet by
+default) is the part that most often fails, silently or not, depending on
+the OS/GPU drivers.
 
 Checks, in order: (1) psychopy imports at all, (2) a window actually opens,
 (3) a keypress is detected. Each step prints [ok]/[FAIL] on its own so a
@@ -61,8 +63,9 @@ def main():
               "rendered fine, but double check keyboard input is reaching PsychoPy (on "
               "macOS this often means granting Accessibility/Input Monitoring permission "
               "to your terminal app in System Settings > Privacy & Security).")
-    print("\n[ok] PsychoPy install looks good -- you're ready to run hcp_motor_task.py / "
-          "hcp_gambling_task.py.")
+    print("\n[ok] PsychoPy install looks good -- you're ready to run generic_motor_task.py / "
+          "checkerboard_1cond_task.py / checkerboard_2cond_task.py / "
+          "checkerboard_3cond_task.py / blackjack_task.py.")
     core.quit()
 
 

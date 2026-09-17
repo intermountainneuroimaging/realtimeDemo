@@ -1,26 +1,31 @@
-##### Configuration file: motor (LEFT vs RIGHT finger tapping) #####
+##### Configuration file: checkerboard_2cond (LEFT vs RIGHT, no CENTER) #####
 #
-# Real-time, registration-free LEFT/RIGHT finger-tapping motor mapping,
-# streaming DICOMs from a real (or mock) scanner via dicomDir/. Pairs with
-# stimuli_ptb/motor_task.m (Psychtoolbox), stimuli/generic_motor_task.py
-# (PsychoPy), or study_design/GenericMotorLR_events.tsv presented by any
-# other means: 30s LEFT FINGER / RIGHT FINGER tapping blocks separated by
-# 10s REST blocks (3 reps each + a trailing rest block, 250s total).
+# Real-time, registration-free visual localizer, streaming DICOMs from a
+# real (or mock) scanner via dicomDir/. Pairs with
+# stimuli_ptb/checkerboard_2cond_task.m (Psychtoolbox) or
+# study_design/Checkerboard2Cond_events.tsv presented by any other
+# means: a checkerboard bar flickers in the LEFT or RIGHT screen position
+# per block -- no CENTER condition -- 12s blocks, 4 reps of each + rest
+# between every block, 204s total.
 #
-# Run: python run_task.py motor   (see ../run_task.py / ../quickstart.sh motor)
+# This is a shorter, 2-condition variant of checkerboard_3cond: dropping
+# CENTER (and its associated rest block each rep) means this is an
+# ordinary condA-vs-condB design -- unlike checkerboard_3cond.toml, it does
+# NOT set glmCondC and does NOT use the task-specific 3-way one-vs-rest
+# contrast (see taskActivation.py's glmCondC comment); it uses the exact
+# same standard GLM/plotting path every other task's toml uses.
+#
+# Run: python run_task.py checkerboard_2cond   (see ../run_task.py / ../quickstart.sh checkerboard_2cond)
 
-title = "Real-Time fMRI Task Activation (LEFT vs RIGHT finger tapping)"
+title = "Real-Time fMRI Task Activation (checkerboard LEFT vs RIGHT)"
 
 # ---- generic real-time task-activation demo ----
 
-taskName = "MotorLR"
+taskName = "Checkerboard2Cond"
 
 # events file (shipped) used to build the per-volume design at runtime.
-eventsFile = "GenericMotorLR_events.tsv"
+eventsFile = "Checkerboard2Cond_events.tsv"
 
-# condition display names. cond A = LEFT finger (-> right motor cortex),
-#                          cond B = RIGHT finger (-> left motor cortex)
-#
 # Not configured here (fixed in taskActivation.py -- not deployment-specific):
 # TR is always inferred from the first real DICOM's RepetitionTime; hrf_delay
 # is derived from that TR; nVols falls back to an events-file estimate if the
@@ -50,8 +55,8 @@ fwhm = 5                   # smoothing FWHM (mm)
 mapThreshPct = 0.5         # %-signal-change threshold for the per-frame activation overlay
 contrastThresh = 2.0       # GLM map threshold (z units when glmZscore=true)
 driftOrder = 1             # polynomial drift terms in the GLM (per-run)
-glmCondA = "left_finger"   # GLM contrast condA-condB; also used as the display label
-glmCondB = "right_finger"  # set empty ("") to plot the condA beta weight instead
+glmCondA = "left"          # GLM condA beta weight
+glmCondB = "right"         # GLM condB beta weight -- condA-vs-condB contrast (left vs right)
 glmZscore = true           # z-score the GLM map across voxels
 restTypes = []             # trial_types to treat as implicit baseline; [] = auto-detect (rest/fixation/...)
 zCuts = []                 # fixed axial slice positions in mm, e.g. [-20,-5,10,25,40,55]; [] = auto
@@ -68,17 +73,18 @@ liveDirName = "live"       # subfolder of rt-cloud/outDir/ the viewer watches
 # saveGif is CLI-only now (default off) -- pass taskActivation.py's own
 # --save-gif (or quickstart.sh's --save-gif, which forwards it) to assemble
 # every saved frame into a replay-able outDir/live/activation_run<N>.gif at
-# end of run; not a toml setting anymore.
+# end of run; not a toml setting anymore. The standard single condA-vs-condB
+# bundle format works fine here, unlike checkerboard_3cond.toml's 3-way mode.
 gifFps = 8                 # GIF playback speed (frames/sec) -- only relevant if --save-gif is passed
 
-# ---- web Data Plots tab (LEFT-ROI %SC minus RIGHT-ROI %SC) ----
-plotTitle = 'Lateralization (LEFT-ROI minus RIGHT-ROI, % signal change)'
+# ---- web Data Plots tab (ROI %SC, single condition -- no A-minus-B here) ----
+plotTitle = 'Checkerboard 2-condition LEFT vs RIGHT (ROI % signal change)'
 plotXLabel = 'volume #'
-plotYLabel = 'LEFT - RIGHT % signal change'
+plotYLabel = 'ROI % signal change'
 plotXRangeLow = 0
-plotXRangeHigh = 130       # rough (250s design / ~TR=2s); the analysis itself uses the
+plotXRangeHigh = 110       # rough (204s design / ~TR=2s); the analysis itself uses the
                            # real inferred TR regardless -- this only sizes the web widget
 plotYRangeLow = -2
-plotYRangeHigh = 2
+plotYRangeHigh = 4
 plotAutoRangeX = false
 plotAutoRangeY = true

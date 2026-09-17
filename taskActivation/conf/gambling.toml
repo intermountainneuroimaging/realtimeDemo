@@ -7,10 +7,11 @@
 # outcome), separated by a variable 1.0-3.0s jittered inter-trial interval
 # -- ~5 minutes total. See study_design/Blackjack_events.tsv. Pairs with
 # stimuli_ptb/blackjack_task.m (Psychtoolbox) or the PsychoPy
-# stimuli/blackjack_task.py. The original HCP
-# card-guess presentation (gambling_task.m / hcp_gambling_task.py,
-# HcpGambling_acq-ap_events.tsv, a different timing design) is untouched and
-# still used by tutorial/'s offline validation against the real ds000244 data.
+# stimuli/blackjack_task.py. The original HCP card-guess presentation
+# (obsolete/stimuli_ptb/gambling_task.m / obsolete/stimuli/hcp_gambling_task.py,
+# a different timing design) is archived, not deployed here -- but
+# tutorial/'s own offline validation against the real ds000244 data uses
+# its own separate copy of HcpGambling_acq-ap_events.tsv and is unaffected.
 #
 # Run: python run_task.py gambling   (see ../run_task.py / ../quickstart.sh gambling)
 
@@ -72,9 +73,11 @@ maskFraction = 0.12
 # ---- realtime display ----
 liveEveryTR = 1            # write a live update every N volumes
 liveDirName = "live"       # subfolder of rt-cloud/outDir/ the viewer watches
-saveGif = true             # at end of run, assemble every saved frame into a
-                           # replay-able outDir/live/activation_run<N>.gif
-gifFps = 8                 # GIF playback speed (frames/sec)
+# saveGif is CLI-only now (default off) -- pass taskActivation.py's own
+# --save-gif (or quickstart.sh's --save-gif, which forwards it) to assemble
+# every saved frame into a replay-able outDir/live/activation_run<N>.gif at
+# end of run; not a toml setting anymore.
+gifFps = 8                 # GIF playback speed (frames/sec) -- only relevant if --save-gif is passed
 
 # ---- web Data Plots tab (WIN-ROI %SC minus LOSE-ROI %SC) ----
 plotTitle = 'Blackjack (WIN-ROI minus LOSE-ROI, % signal change)'

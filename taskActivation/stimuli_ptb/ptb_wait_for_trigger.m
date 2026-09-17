@@ -10,7 +10,7 @@ function t0 = ptb_wait_for_trigger(win, triggerKeys, instructions)
 %                  scanner...').
 %
 %   Returns t0, the GetSecs() timestamp of the trigger keypress -- pass this
-%   into ptb_run_block_loop.m (or use directly, as gambling_task.m does) so
+%   into ptb_run_block_loop.m (or use directly, as blackjack_task.m does) so
 %   every event is timed relative to the actual first-volume trigger, not
 %   whenever the script happened to start.
 %

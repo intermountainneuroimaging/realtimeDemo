@@ -15,9 +15,9 @@ files so the real-time analysis assumes exactly what's actually presented.
 |---|---|---|
 | `motor_task.m` | `../study_design/GenericMotorLR_events.tsv` | 30s LEFT FINGER / RIGHT FINGER tapping blocks separated by 10s REST blocks (3 reps each + trailing rest, 13 blocks / 250s) |
 | `blackjack_task.m` | `../study_design/Blackjack_events.tsv` | this project's own two-card blackjack design: hit(1) or stay(2), any time in a 2.0s decision window, immediately reveals a pre-scripted win / lose / tie outcome (3.0s/trial), separated by a jittered 1.0-3.0s inter-trial interval -- 58 trials (24 win / 24 lose / 10 tie), ~5 minutes total |
-| `gambling_task.m` | `../study_design/HcpGambling_acq-ap_events.tsv` | the original HCP project's own card-guessing design, unchanged: reward / punishment / neutral -- kept as-is for `tutorial/`'s offline validation against the real ds000244 data |
-| `checkerboard_task.m` | `../study_design/Checkerboard_events.tsv` | 20s ON/OFF blocks: full-contrast checkerboard (genuine OFF/A/OFF/B flicker, not two patterns swapped with no blank) vs fixation (6 reps + trailing rest, 13 blocks / 260s) |
-| `checkerboard_lr_task.m` | `../study_design/CheckerboardLR_events.tsv` | a 3-position visual localizer flickering OFF/A/OFF/B (same reversal-with-blank flicker as `checkerboard_task.m`) in CENTER, LEFT, or RIGHT screen position per block -- CENTER is a small foveal square, LEFT/RIGHT are full window-height bars flush to the screen edge -- with a central fixation cross visible throughout -- 12s blocks, 4 reps of each + rest between every block, 300s total |
+| `checkerboard_1cond_task.m` | `../study_design/Checkerboard1Cond_events.tsv` | 20s ON/OFF blocks: full-contrast checkerboard (genuine OFF/A/OFF/B flicker, not two patterns swapped with no blank) vs fixation (6 reps + trailing rest, 13 blocks / 260s) |
+| `checkerboard_2cond_task.m` | `../study_design/Checkerboard2Cond_events.tsv` | the LEFT/RIGHT half of `checkerboard_3cond_task.m` with CENTER dropped entirely -- an ordinary 2-condition design, not the 3-way one-vs-rest -- 12s blocks, 4 reps of each + rest between every block, 204s total |
+| `checkerboard_3cond_task.m` | `../study_design/Checkerboard3Cond_events.tsv` | a 3-position visual localizer flickering OFF/A/OFF/B (same reversal-with-blank flicker as `checkerboard_1cond_task.m`) in CENTER, LEFT, or RIGHT screen position per block -- CENTER is a small foveal square, LEFT/RIGHT are full window-height bars flush to the screen edge -- with a central fixation cross visible throughout -- 12s blocks, 4 reps of each + rest between every block, 300s total |
 
 All events.tsv files live in the top-level `study_design/` (not
 `tutorial/study_design/`) — the exact folder `taskActivation.py` itself
@@ -25,28 +25,30 @@ reads `eventsFile` from — so what MATLAB presents and what the live
 analysis assumes can never point at different copies of the same design.
 
 Each task has its own ready-to-use config — `../conf/motor.toml`,
-`../conf/checkerboard.toml`, `../conf/checkerboard_lr.toml`,
-`../conf/gambling.toml` — with the matching `eventsFile` and GLM contrast
-already set:
+`../conf/checkerboard_1cond.toml`, `../conf/checkerboard_2cond.toml`,
+`../conf/checkerboard_3cond.toml`, `../conf/gambling.toml` — with the
+matching `eventsFile` and GLM contrast already set:
 
 | Task | `conf/*.toml` | `eventsFile` | `glmCondA` | `glmCondB` | `glmCondC` |
 |---|---|---|---|---|---|
 | Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_finger` | `right_finger` | — |
-| Checkerboard | `checkerboard.toml` | `Checkerboard_events.tsv` | `checkerboard` | *(empty — single-condition beta map, i.e. ON vs the implicit rest/OFF baseline)* | — |
-| Checkerboard L/R | `checkerboard_lr.toml` | `CheckerboardLR_events.tsv` | `center` | `left` | `right` |
+| Checkerboard (1-condition) | `checkerboard_1cond.toml` | `Checkerboard1Cond_events.tsv` | `checkerboard` | *(empty — single-condition beta map, i.e. ON vs the implicit rest/OFF baseline)* | — |
+| Checkerboard (2-condition) | `checkerboard_2cond.toml` | `Checkerboard2Cond_events.tsv` | `left` | `right` | — |
+| Checkerboard (3-condition) | `checkerboard_3cond.toml` | `Checkerboard3Cond_events.tsv` | `center` | `left` | `right` |
 | Gambling (blackjack) | `gambling.toml` | `Blackjack_events.tsv` | `win` | `lose` | — |
 
-`glmCondC` is **task-specific** — only `checkerboard_lr.toml` sets it, and
+`glmCondC` is **task-specific** — only `checkerboard_3cond.toml` sets it, and
 only `taskActivation.py`'s pipeline for that one task understands it (see
 "3-way (one-vs-rest) contrast" below). Every other task's toml leaves it
 unset, with no change to how those are analyzed.
 
-Run any of the four end to end with `../run_task.py` (see
+Run any of the five end to end with `../run_task.py` (see
 [README.md](../README.md#running-with-live-scanner-data) / `quickstart.sh
-<task>` in the main project) — e.g. `python ../run_task.py motor`.
-`gambling_task.m` (the original card-guess design) isn't wired to any
-`conf/*.toml` GLM contrast anymore -- run it directly for a look at the
-original HCP task, or for `tutorial/`'s own offline validation.
+<task>` in the main project) — e.g. `python ../run_task.py motor`. The
+original HCP motor and card-guess presentation scripts
+(`../obsolete/stimuli_ptb/gambling_task.m` and its PsychoPy/events-file
+counterparts) have been archived — see
+[`../obsolete/README.md`](../obsolete/README.md).
 
 ## Responses are recorded via KbQueue, not KbCheck
 
@@ -58,34 +60,35 @@ instant* you call it, so in a realtime presentation loop (busy drawing and
 waiting on `Screen('Flip')`) that pulse can easily land entirely between
 two checks and simply never be seen.
 
-`gambling_task.m` and `blackjack_task.m` each start a `KbQueue` once for the
-**whole run** (`ptb_kbqueue_setup.m`), which hands keyboard buffering off to
-PTB's own background collection — every press is timestamped and stored the
-instant it happens, regardless of what the main loop is doing at that
-moment. `ptb_kbqueue_check_any.m` is then polled once per frame and always
-sees whatever was buffered since the last check, no matter how the loop's
-own timing lined up with the actual press. The **same** per-frame check also
+`blackjack_task.m` starts a `KbQueue` once for the **whole run**
+(`ptb_kbqueue_setup.m`), which hands keyboard buffering off to PTB's own
+background collection — every press is timestamped and stored the instant
+it happens, regardless of what the main loop is doing at that moment.
+`ptb_kbqueue_check_any.m` is then polled once per frame and always sees
+whatever was buffered since the last check, no matter how the loop's own
+timing lined up with the actual press. The **same** per-frame check also
 catches Escape (rather than a second, separately-fallible `KbCheck` call),
 so an abort can't be missed for the same reason a response can't.
 
 Each trial's response is written into the timing log's `response_key` /
 `response_time_s` columns (`'none'` / `NaN` if the subject didn't respond in
-time) -- `gambling_task.m`'s guess keypress, or `blackjack_task.m`'s single
-hit/stay press (whichever comes first ends that trial's decision phase
-immediately -- see "What each task looks like" below). Either way, the
-response never changes the outcome — as in the real HCP task, which outcome
-appears and when is entirely driven by the events.tsv.
+time) -- `blackjack_task.m`'s single hit/stay press (whichever comes first
+ends that trial's decision phase immediately -- see "What each task looks
+like" below) never changes the outcome — which outcome appears and when is
+entirely driven by the events.tsv.
 
-`motor_task.m` and `checkerboard_task.m` don't collect responses at all (pure
-block presentation), so they don't use a `KbQueue` — Escape is checked with a
-plain `KbCheck` each frame in `ptb_run_block_loop.m`, which is fine for an
-experimenter manually aborting (unlike a scanner button pulse, nothing is
-lost if a keypress held for a moment is seen a frame later).
+`motor_task.m` and the three checkerboard tasks don't collect responses at
+all (pure block presentation), so they don't use a `KbQueue` — Escape is
+checked with a plain `KbCheck` each frame in `ptb_run_block_loop.m`, which
+is fine for an experimenter manually aborting (unlike a scanner button
+pulse, nothing is lost if a keypress held for a moment is seen a frame
+later).
 
 ## Task instructions screen
 
-`motor_task.m`, `checkerboard_task.m`, `checkerboard_lr_task.m`, and
-`blackjack_task.m` each show a brief task-instructions screen — what the
+`motor_task.m`, `checkerboard_1cond_task.m`, `checkerboard_2cond_task.m`,
+`checkerboard_3cond_task.m`, and `blackjack_task.m` each show a brief
+task-instructions screen — what the
 task is and what the subject's
 goal is — right after the window opens, **before** the "Waiting for scanner
 trigger..." screen. `ptb_show_instructions.m` draws the text and blocks
@@ -134,8 +137,8 @@ outcome text — see its own entry in "What each task looks like" below.
 
 ## Clean exit on every path
 
-Every task script wraps its window (and, for `gambling_task.m` /
-`blackjack_task.m`, its `KbQueue`) in MATLAB's `onCleanup`, e.g.:
+Every task script wraps its window (and, for `blackjack_task.m`, its
+`KbQueue`) in MATLAB's `onCleanup`, e.g.:
 ```matlab
 win = ptb_open_window(...);
 cleanupWin = onCleanup(@() sca);   % Screen('CloseAll') + ShowCursor + Priority(0)
@@ -144,9 +147,9 @@ cleanupWin = onCleanup(@() sca);   % Screen('CloseAll') + ShowCursor + Priority(
 completion, an Escape-triggered abort, or an uncaught error partway through
 — so the display and keyboard queue are always released and the subject is
 never left staring at a frozen/black screen because of a bug or a MATLAB
-error dialog. `gambling_task.m` / `blackjack_task.m` also always write their
-timing log (including whatever responses were recorded) before returning,
-even on an Escape abort.
+error dialog. `blackjack_task.m` also always writes its timing log
+(including whatever responses were recorded) before returning, even on an
+Escape abort.
 
 ## Install and test Psychtoolbox
 
@@ -184,8 +187,7 @@ pulses and response boxes often present as the *shifted-symbol* name PTB
 gives a number key rather than the plain digit — e.g. `'5%'` instead of
 `'5'`, `'1!'`/`'2@'` instead of `'1'`/`'2'` — depending on the interface
 hardware. The task scripts' defaults already include both forms
-(`{'5','5%','t'}` for triggers, `{'1','1!','2','2@','3','3#','4','4$'}` for
-`gambling_task.m`'s guess responses, `{'1','1!','2','2@'}` for
+(`{'5','5%','t'}` for triggers, `{'1','1!','2','2@'}` for
 `blackjack_task.m`'s hit/stay), but if your site's box reports something
 else entirely, run `test_ptb_install`, press the actual trigger or button
 once, and pass whatever it prints via `'TriggerKey'` / `'ResponseKeys'`.
@@ -248,19 +250,20 @@ once, and pass whatever it prints via `'TriggerKey'` / `'ResponseKeys'`.
   `SkipSyncTests` on — a real scanner-room display should pass cleanly.
 
 Once that passes, you're ready to run `motor_task.m` / `blackjack_task.m` /
-`gambling_task.m` / `checkerboard_task.m` below.
+`checkerboard_1cond_task.m` / `checkerboard_2cond_task.m` /
+`checkerboard_3cond_task.m` below.
 
 ## Running
 
 ```matlab
 motor_task
 blackjack_task
-gambling_task
-checkerboard_task
-checkerboard_lr_task
+checkerboard_1cond_task
+checkerboard_2cond_task
+checkerboard_3cond_task
 ```
 
-All five (except `gambling_task.m`, the original HCP task -- see below):
+All five:
 - **Show a task-instructions screen first** — a brief description of the
   task and the subject's goal, dismissed with button 1 or 2 (or Escape to
   abort before the run even starts). See "Task instructions screen" below.
@@ -271,10 +274,10 @@ All five (except `gambling_task.m`, the original HCP task -- see below):
   trigger moment (`GetSecs()`), matching how the real-time analysis anchors
   its own timing to the first DICOM.
 - **Log actual vs expected onset time** per event to
-  `stimuli_ptb/logs/<task>_<timestamp>.tsv` (`gambling_task.m`'s and
-  `blackjack_task.m`'s logs also have `response_key` / `response_time_s`
-  columns — see above), so you can check real presentation accuracy against
-  the design afterward (`'LogPath'` to change the path).
+  `stimuli_ptb/logs/<task>_<timestamp>.tsv` (`blackjack_task.m`'s logs also
+  have `response_key` / `response_time_s` columns — see above), so you can
+  check real presentation accuracy against the design afterward
+  (`'LogPath'` to change the path).
 - Fill the stimulus display by default (`'Windowed', true` for testing on a
   laptop without hiding everything else; `'ScreenWidth'`/`'ScreenHeight'`
   for a known projector resolution — see "Screen / display setup" above).
@@ -325,44 +328,51 @@ separated by a variable inter-trial interval (jittered 1.0-3.0s, ~2s mean)
 of plain fixation, so the design isn't perfectly periodic. 58 trials (24
 win / 24 lose / 10 tie), ~5 minutes total.
 
-**`gambling_task.m`** — the original HCP card-guessing task, unchanged: each
-trial briefly shows a face-down card ("Higher or Lower? press any button"),
-then reveals the outcome: green `+$1.00` (reward), red `−$0.50`
-(punishment), or gray `$0.00` (neutral) — or gray "No response `$0.00`" if
-the subject didn't press anything during the guess phase. As in the real HCP
-task, the guess doesn't actually change which outcome a responded trial
-gets. Not wired to any `conf/*.toml` contrast anymore (see the task table
-above) — run it directly, or via `tutorial/`'s offline validation.
+**`checkerboard_1cond_task.m`** — a full-contrast checkerboard patch centered
+on screen during ON blocks, with a genuine flicker: OFF (blank) -> ON
+(pattern A) -> OFF -> ON (pattern B, the black<->white inverse of A) ->
+repeat, each state lasting `1/'FlickerHz'` (default 8) -- so a given screen
+location truly cycles black -> white -> black, rather than swapping
+directly between two checkerboards with no blank in between (which can
+look like a static image). Plain fixation during OFF blocks. Matches
+`taskActivation.py`'s `glmCondA=checkerboard` beta-weight map (no second
+condition — set `glmCondB=""` in the toml) when pointed at
+`Checkerboard1Cond_events.tsv`.
 
-**`checkerboard_task.m`** — a full-contrast checkerboard patch centered on
-screen during ON blocks, with a genuine flicker: OFF (blank) -> ON (pattern
-A) -> OFF -> ON (pattern B, the black<->white inverse of A) -> repeat, each
-state lasting `1/'FlickerHz'` (default 8) -- so a given screen location
-truly cycles black -> white -> black, rather than swapping directly between
-two checkerboards with no blank in between (which can look like a static
-image). Plain fixation during OFF blocks. Matches `taskActivation.py`'s
-`glmCondA=checkerboard` beta-weight map (no second condition — set
-`glmCondB=""` in the toml) when pointed at `Checkerboard_events.tsv`.
+**`checkerboard_2cond_task.m`** — the LEFT/RIGHT half of
+`checkerboard_3cond_task.m`, with the CENTER condition (and its associated
+rest block each rep) dropped entirely: same OFF/A/OFF/B flicker, same
+full window-height bars flush to the screen edge, same fixation-cross
+behavior, but only 2 conditions and a shorter run (204s vs 300s). Since
+it's an ordinary 2-condition design, it does NOT use the task-specific
+3-way mode below — it matches `taskActivation.py`'s standard
+`glmCondA=left` / `glmCondB=right` contrast, the same as every other
+task's toml.
 
-**`checkerboard_lr_task.m`** — the same OFF/A/OFF/B flicker as
-`checkerboard_task.m`, shown in the CENTER, LEFT, or RIGHT of the screen
-depending on the block. CENTER is a SQUARE (`centerWidthFraction` of the
-screen wide AND tall, not the full window height) centered on screen, so
-it stimulates only the fovea; LEFT and RIGHT are full window-height BARS
-(`sideWidthFraction` wide) anchored flush against the window's left/right
-edge respectively (no gap), reaching as far into the periphery as the
-window allows. A small `+` fixation cross stays visible at screen center
-through every block (including every OFF phase) so the subject can hold
-central gaze while the periphery is stimulated. Matches
+**`checkerboard_3cond_task.m`** — the same OFF/A/OFF/B flicker as
+`checkerboard_1cond_task.m`, shown in the CENTER, LEFT, or RIGHT of the
+screen depending on the block. CENTER is a SQUARE (`centerWidthFraction` of
+the screen wide AND tall, not the full window height) centered on screen,
+so it stimulates only the fovea; LEFT and RIGHT are full window-height
+BARS (`sideWidthFraction` wide) anchored flush against the window's
+left/right edge respectively (no gap), reaching as far into the periphery
+as the window allows. A small `+` fixation cross stays visible at screen
+center through every block (including every OFF phase) so the subject can
+hold central gaze while the periphery is stimulated. Matches
 `taskActivation.py`'s task-specific 3-way one-vs-rest mode (`glmCondA=center`
 / `glmCondB=left` / `glmCondC=right`) — see "3-way (one-vs-rest) contrast:
-checkerboard_lr only" below.
+checkerboard_3cond only" below.
 
-## 3-way (one-vs-rest) contrast: checkerboard_lr only
+The original HCP card-guessing task (`gambling_task.m` — face-down card,
+"Higher or Lower?", reward/punishment/neutral, the guess never changes the
+outcome) has been archived — see
+[`../obsolete/README.md`](../obsolete/README.md).
+
+## 3-way (one-vs-rest) contrast: checkerboard_3cond only
 
 Every other task/toml in this project contrasts exactly two conditions
 (`glmCondA` minus `glmCondB`, or just `glmCondA`'s own beta weight). Setting
-`glmCondC` — a config key ONLY `conf/checkerboard_lr.toml` uses — switches
+`glmCondC` — a config key ONLY `conf/checkerboard_3cond.toml` uses — switches
 `taskActivation.py`'s live mosaic to three separate contrasts instead:
 `glmCondA` vs the mean of `glmCondB`+`glmCondC`, `glmCondB` vs the mean of
 `glmCondA`+`glmCondC`, and `glmCondC` vs the mean of `glmCondA`+`glmCondB` —
@@ -381,11 +391,11 @@ unchanged. Two things the normal path has that this one doesn't:
 - **The web Data Plots tab** — untouched; it still shows a single ROI
   %-signal-change line from the first condition of interest (`center`),
   same mechanism as every other task, not a 3-way view.
-- **The end-of-run activation GIF** — `conf/checkerboard_lr.toml` sets
-  `saveGif = false`. `build_activation_gif()` only knows how to replay the
-  standard single-contrast bundle format; `write_live_update_3way()`
-  deliberately skips writing that bundle at all (see its own docstring)
-  rather than produce a broken replay.
+- **The end-of-run activation GIF** — a no-op here even with `--save-gif`
+  passed. `build_activation_gif()` only knows how to replay the standard
+  single-contrast bundle format; `write_live_update_3way()` deliberately
+  skips writing that bundle at all (see its own docstring) rather than
+  produce a broken replay.
 
 ## Files
 
@@ -405,15 +415,15 @@ unchanged. Two things the normal path has that this one doesn't:
   text actually fit within a fraction of the real window's width/height
   (see "Fits the real window, at any resolution" above); shared by
   `ptb_show_instructions.m` and `blackjack_task.m`.
-- `ptb_run_block_loop.m` — the render loop `motor_task.m` /
-  `checkerboard_task.m` share: draws whatever the caller's `stimFor`
-  callback returns for the current time, handles rest gaps, writes the
+- `ptb_run_block_loop.m` — the render loop `motor_task.m` and all three
+  checkerboard tasks share: draws whatever the caller's `stimFor` callback
+  returns for the current time, handles rest gaps, writes the
   timing-accuracy log, and checks Escape.
 - `ptb_write_event_log.m` — writes a tab-delimited log from a header +
   row cell array.
-- `motor_task.m`, `blackjack_task.m`, `gambling_task.m`,
-  `checkerboard_task.m`, `checkerboard_lr_task.m` — the five task scripts
-  described above.
+- `motor_task.m`, `blackjack_task.m`, `checkerboard_1cond_task.m`,
+  `checkerboard_2cond_task.m`, `checkerboard_3cond_task.m` — the five task
+  scripts described above.
 - `test_ptb_install.m` — standalone smoke test (see "Install and test
   Psychtoolbox" above); also the fastest way to discover your trigger/
   button box's real PTB key names.
@@ -428,15 +438,20 @@ reading Psychtoolbox's documented API and cross-checked against a real,
 working MATLAB/PTB experiment script from this lab (confirming the KbQueue
 response pattern, screen-size/display-selection conventions, and clean-exit
 structure above), and checked for structural/syntax correctness, but they
-have **not** been run end-to-end in MATLAB (`blackjack_task.m` and
-`checkerboard_lr_task.m` included — no Octave/MATLAB was available to
-execute either in this environment; their underlying designs were instead
-validated indirectly, by confirming `Blackjack_events.tsv`/`gambling.toml`
-and `CheckerboardLR_events.tsv`/`checkerboard_lr.toml` each produce the
-expected GLM classification, and a real end-to-end run against the mock
-scanner in Docker -- for checkerboard_lr, including the 3-way one-vs-rest
-mosaic rendering itself, which was additionally verified directly with
-synthetic data on this machine's own Python/nilearn install before the
-Docker run). Run `test_ptb_install.m` first, then a short test run of
+have **not** been run end-to-end in MATLAB (`blackjack_task.m`,
+`checkerboard_2cond_task.m`, and `checkerboard_3cond_task.m` included — no
+Octave/MATLAB was available to execute any of them in this environment;
+their underlying designs were instead validated indirectly, by confirming
+`Blackjack_events.tsv`/`gambling.toml`, `Checkerboard3Cond_events.tsv`/
+`checkerboard_3cond.toml`, and `Checkerboard2Cond_events.tsv`/
+`checkerboard_2cond.toml` each produce the expected GLM classification,
+and a real end-to-end run against the mock scanner in Docker -- for
+checkerboard_3cond, including the 3-way one-vs-rest mosaic rendering itself,
+which was additionally verified directly with synthetic data on this
+machine's own Python/nilearn install before the Docker run;
+checkerboard_2cond's geometry/flicker logic was additionally verified
+directly against its own PsychoPy port, which was rendered and visually
+confirmed on this machine). Run `test_ptb_install.m` first, then a short
+test run of
 each task (`'Windowed', true`, `'TriggerKey', {'space'}`) before a real
 session.

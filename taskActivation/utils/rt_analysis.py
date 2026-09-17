@@ -199,7 +199,7 @@ def classify_conditions(rows, condA=None, condB=None, condC=None, rest_types=Non
     """Split the events' trial_types into rest (implicit baseline), the
     conditions of interest (condA/condB/condC), and additional covariates
     (everything else). `condC` is optional (default None), for a 3-way
-    one-vs-rest design (e.g. checkerboard_lr) -- every other caller just
+    one-vs-rest design (e.g. checkerboard_3cond) -- every other caller just
     omits it. Returns a dict with keys: rest, interest, covariates, modeled."""
     all_types = sorted(set(tt for _, _, tt in rows))
     rest = set(rest_types) if rest_types is not None else {t for t in all_types if is_rest_type(t)}
@@ -438,7 +438,7 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
         import matplotlib.pyplot as plt
     except Exception:
         return False
-    if z_cuts:
+    if z_cuts is not None and len(z_cuts):
         cuts = list(z_cuts)                          # explicit mm levels
     else:
         cuts = _brain_z_cuts(ref3d, affine, n_slices) or n_slices   # real brain content, or fall back to auto count
@@ -525,7 +525,7 @@ def nilearn_stat_png_3way(out_png, ref3d, affine, title, maps, labels, colors,
     like nilearn_stat_png() above, but with THREE separately-thresholded
     one-vs-rest contrast maps overlaid in three distinct solid colors
     instead of one red/blue diverging map -- task-specific (see
-    checkerboard_lr / conf/checkerboard_lr.toml's glmCondC), not used by
+    checkerboard_3cond / conf/checkerboard_3cond.toml's glmCondC), not used by
     any other task. `maps` is a 3-tuple of 3D contrast volumes (or None
     entries, before each is estimable -- see glm_beta_contrast_one_vs_rest());
     `labels`/`colors` matching 3-tuples (colors are matplotlib sequential
@@ -539,7 +539,7 @@ def nilearn_stat_png_3way(out_png, ref3d, affine, title, maps, labels, colors,
         import matplotlib.pyplot as plt
     except Exception:
         return False
-    if z_cuts:
+    if z_cuts is not None and len(z_cuts):
         cuts = list(z_cuts)
     else:
         cuts = _brain_z_cuts(ref3d, affine, n_slices) or n_slices
@@ -734,7 +734,7 @@ def write_live_update(liveDir, run, vol, runLabel, zmap3d, ref3d, affine, peak, 
         caption=(caption or ''), condLabel=(condLabel or ''),
         contrast_label=(contrast_label or ''),
         contrast_thresh=float(contrast_thresh), n_slices=int(n_slices),
-        z_cuts=np.asarray(z_cuts if z_cuts else [], dtype=np.float32),
+        z_cuts=np.asarray(z_cuts if (z_cuts is not None and len(z_cuts)) else [], dtype=np.float32),
         full_xlim=np.asarray(full_xlim if full_xlim else [], dtype=np.float32),
         affine=np.asarray(affine, np.float32),
         zmap=np.asarray(zmap3d, np.float32),
@@ -773,13 +773,13 @@ def write_live_update_3way(liveDir, run, vol, runLabel, ref3d, affine,
                            maps, labels, colors, thresh=2.0, condLabel=None,
                            n_slices=6, z_cuts=None, voxel_traces=None, full_xlim=None):
     """The 3-way sibling of write_live_update() above -- task-specific (see
-    checkerboard_lr / conf/checkerboard_lr.toml's glmCondC), used ONLY when
+    checkerboard_3cond / conf/checkerboard_3cond.toml's glmCondC), used ONLY when
     a task's config sets glmCondC. Renders current.png via
     nilearn_stat_png_3way() instead of nilearn_stat_png(). Unlike
     write_live_update(), this does NOT write a live_run*.npz bundle or
     advance latest.txt: those exist solely so build_activation_gif() can
     re-render every saved frame into an end-of-run replay GIF, and that
-    replay doesn't understand this 3-map format -- see conf/checkerboard_lr.toml's
+    replay doesn't understand this 3-map format -- see conf/checkerboard_3cond.toml's
     saveGif=false. The live web viewer itself only ever polls current.png
     directly, so skipping the bundle costs nothing there."""
     os.makedirs(liveDir, exist_ok=True)
@@ -1030,7 +1030,7 @@ def glm_beta_contrast_one_vs_rest(X, Y, names, cond, others, min_on=4, zscore=Tr
     `others` (a list of condition names) rather than a single second
     condition -- for a 3-way one-vs-rest design where each of 3 conditions
     is contrasted against the average of the other two (task-specific; see
-    checkerboard_lr / conf/checkerboard_lr.toml's glmCondC). Returns None
+    checkerboard_3cond / conf/checkerboard_3cond.toml's glmCondC). Returns None
     until `cond` AND every condition in `others` has its own min_on
     "on" volumes."""
     if cond not in names:

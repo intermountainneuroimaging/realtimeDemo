@@ -9,12 +9,14 @@
 # Usage:
 #   ./quickstart.sh                     # default config (conf/taskActivation.toml)
 #   ./quickstart.sh motor               # LEFT vs RIGHT finger tapping (conf/motor.toml)
-#   ./quickstart.sh checkerboard        # flickering checkerboard ON vs OFF (conf/checkerboard.toml)
-#   ./quickstart.sh checkerboard_lr     # checkerboard CENTER vs LEFT vs RIGHT (conf/checkerboard_lr.toml)
+#   ./quickstart.sh checkerboard_1cond  # flickering checkerboard ON vs OFF (conf/checkerboard_1cond.toml)
+#   ./quickstart.sh checkerboard_3cond  # checkerboard CENTER vs LEFT vs RIGHT (conf/checkerboard_3cond.toml)
+#   ./quickstart.sh checkerboard_2cond  # checkerboard LEFT vs RIGHT, no CENTER (conf/checkerboard_2cond.toml)
 #   ./quickstart.sh gambling            # blackjack WIN vs LOSE (conf/gambling.toml)
 #   ./quickstart.sh motor --run 2       # same, but run number 2 instead of the toml's runNum
 #   ./quickstart.sh --run 2             # default config, run number 2 (task name optional)
 #   ./quickstart.sh motor --plot-every-frame --skip-motion-correction
+#   ./quickstart.sh motor --save-gif    # also assemble an end-of-run activation GIF (off by default)
 #
 # The <task> argument is just run_task.py's own task name -- see run_task.py
 # / README.md for what each config's eventsFile/GLM contrast is, and
@@ -22,10 +24,10 @@
 # computer while this runs. --run/-r overrides the toml's runNum, forwarded
 # straight through to run_task.py / taskActivation.py's own --run -- handy
 # for bridging/streaming a different run each session without editing the toml.
-# --plot-every-frame and --skip-motion-correction are likewise forwarded
-# straight through to taskActivation.py's own flags of the same name -- see
-# its --help for what each actually does (and --skip-motion-correction's
-# real accuracy tradeoff) before using them.
+# --plot-every-frame, --skip-motion-correction, and --save-gif are likewise
+# forwarded straight through to taskActivation.py's own flags of the same
+# name -- see its --help for what each actually does (and
+# --skip-motion-correction's real accuracy tradeoff) before using them.
 #
 # All paths below have sane defaults (this project folder's own dicomDir/ and
 # a sibling outDir/), but you can override any of them by exporting first:
@@ -45,6 +47,7 @@ TASK=""
 RUN_ID=""
 PLOT_EVERY_FRAME=""
 SKIP_MOTION_CORRECTION=""
+SAVE_GIF=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --run|-r)
@@ -67,6 +70,10 @@ while [ $# -gt 0 ]; do
             SKIP_MOTION_CORRECTION=1
             shift
             ;;
+        --save-gif)
+            SAVE_GIF=1
+            shift
+            ;;
         -*)
             echo "Unknown option: '$1'" >&2
             exit 1
@@ -84,9 +91,9 @@ done
 
 if [ -n "$TASK" ]; then
     case "$TASK" in
-        motor|checkerboard|checkerboard_lr|gambling) ;;
+        motor|checkerboard_1cond|checkerboard_2cond|checkerboard_3cond|gambling) ;;
         *)
-            echo "Unknown task: '$TASK' (expected motor, checkerboard, checkerboard_lr, or gambling)" >&2
+            echo "Unknown task: '$TASK' (expected motor, checkerboard_1cond, checkerboard_2cond, checkerboard_3cond, or gambling)" >&2
             echo "Run with no task argument to use the default conf/taskActivation.toml instead." >&2
             exit 1
             ;;
@@ -124,6 +131,7 @@ echo "TASK=${TASK:-<default: taskActivation.toml>}"
 echo "RUN_ID=${RUN_ID:-<default: from the toml>}"
 echo "PLOT_EVERY_FRAME=${PLOT_EVERY_FRAME:-0}"
 echo "SKIP_MOTION_CORRECTION=${SKIP_MOTION_CORRECTION:-0}"
+echo "SAVE_GIF=${SAVE_GIF:-0}"
 echo
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -210,6 +218,9 @@ if [ -n "$PLOT_EVERY_FRAME" ]; then
 fi
 if [ -n "$SKIP_MOTION_CORRECTION" ]; then
     RUN_CMD="$RUN_CMD --skip-motion-correction"
+fi
+if [ -n "$SAVE_GIF" ]; then
+    RUN_CMD="$RUN_CMD --save-gif"
 fi
 yes y | docker run -i --rm \
     -e PYTHONUNBUFFERED=1 \

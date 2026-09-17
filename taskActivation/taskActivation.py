@@ -109,6 +109,15 @@ ap.add_argument('--z-cuts', default=None, type=str,
                      "the toml's zCuts for this run (run_task.py hard-codes these per task, "
                      "tailored to where each task's activation actually falls, rather "
                      "than the generic auto-selected levels). Leave unset to use the toml.")
+ap.add_argument('--save-gif', action='store_true',
+                help="OPT-IN -- at end of run, assemble every saved live_run{N}_vol*.npz "
+                     "bundle into a replay-able outDir/live/activation_run{N}.gif. Off by "
+                     "default (building it costs real time re-rendering every saved frame, "
+                     "not needed for most runs); pass this flag (or quickstart.sh's own "
+                     "--save-gif, which forwards here) to opt in for a given run. A no-op "
+                     "for the 3-way one-vs-rest tasks (checkerboard_3cond) -- that mode's "
+                     "live bundles aren't written in the single-contrast format this GIF "
+                     "builder understands, so there's nothing to assemble either way.")
 args = ap.parse_args(None)
 cfg = loadConfigFile(args.config)
 
@@ -179,12 +188,12 @@ contrastThresh = _cfg_opt('contrastThresh', 2.0, float)  # GLM map threshold (z 
 driftOrder = _cfg_opt('driftOrder', 1, int)             # polynomial drift terms in the GLM
 glmCondA = _cfg_opt('glmCondA', 'left_hand', str)       # GLM contrast: condA [- condB]
 glmCondB = _cfg_opt('glmCondB', 'right_hand', str)      # empty -> plot condA beta weight only
-glmCondC = _cfg_opt('glmCondC', '', str)                # TASK-SPECIFIC (checkerboard_lr only):
+glmCondC = _cfg_opt('glmCondC', '', str)                # TASK-SPECIFIC (checkerboard_3cond only):
                                                          # a 3rd condition switches the live mosaic
                                                          # from the usual condA-vs-condB diverging
                                                          # map to three one-vs-rest maps overlaid in
                                                          # blue (condA)/red (condB)/green (condC) --
-                                                         # see conf/checkerboard_lr.toml's own comment.
+                                                         # see conf/checkerboard_3cond.toml's own comment.
                                                          # Every other task's toml leaves this empty.
 glmZscore = _cfg_opt('glmZscore', True, bool)           # z-score the GLM map across voxels
 _rt = _cfg_opt('restTypes', [], list) or []             # explicit rest trial_types; [] = auto-detect
@@ -195,7 +204,8 @@ zCuts = mrt.parse_float_list(args.z_cuts if args.z_cuts is not None else getattr
 if args.z_cuts is not None:
     print(f"[run] using z-cuts {zCuts} from --z-cuts (overrides toml zCuts)")
 baselineFramesCfg = _cfg_opt('baselineFrames', -1, int)  # -1 = auto (frames before 1st event)
-saveGif = _cfg_opt('saveGif', True, bool)               # replay-able activation GIF at end of run
+saveGif = args.save_gif                                 # replay-able activation GIF at end of run --
+                                                         # CLI-only opt-in (default off), see --save-gif
 gifFps = _cfg_opt('gifFps', 8, int)                     # GIF playback speed (frames/sec)
 dicomTimeout = _cfg_opt('dicomTimeout', 30.0, float)    # seconds to wait per volume before raising
                                                          # -- rtCommon's own default is only 5s, too
@@ -370,7 +380,7 @@ def _plot_worker(q):
     needed), reading (func, args, kwargs) tuples from `q` until a None
     sentinel -- `func` is whichever render function the caller queued
     (mrt.write_live_update for every task, or mrt.write_live_update_3way for
-    checkerboard_lr's task-specific 3-way mosaic; see where this is queued
+    checkerboard_3cond's task-specific 3-way mosaic; see where this is queued
     below). See where this worker is started for the queue-draining logic
     that keeps only the newest not-yet-started frame pending -- this process
     alone doesn't decide what to skip, it just renders whatever it's handed."""
@@ -556,7 +566,7 @@ for vol in range(1, nVols + 1):
         # LEFT vs RIGHT (or single-condition) map from an incremental GLM: refit
         # OLS on all rows seen so far (HRF-convolved regressors), contrast the
         # configured conditions, z-scored across voxels. glmCondC (TASK-SPECIFIC,
-        # checkerboard_lr only -- see its glmCondC comment above) switches this
+        # checkerboard_3cond only -- see its glmCondC comment above) switches this
         # to three one-vs-rest maps instead of one condA-vs-condB map.
         contrast3d = None
         threeway_maps = None
@@ -627,7 +637,7 @@ for vol in range(1, nVols + 1):
             except Exception:
                 break
         if glmCondC:
-            # TASK-SPECIFIC (checkerboard_lr only): three one-vs-rest maps
+            # TASK-SPECIFIC (checkerboard_3cond only): three one-vs-rest maps
             # instead of the usual single condA-vs-condB bundle -- see
             # write_live_update_3way's own docstring for why this skips the
             # live_run*.npz bundle/GIF-replay path the normal case below uses.
@@ -719,8 +729,8 @@ except Exception as e:
     print(f"[final] peak-voxel HRF plot skipped: {e}")
 
 # ---- end of run: assemble every saved live_run{curRun}_vol*.npz bundle into a
-#      replay-able GIF of the whole run's activation maps (set saveGif=false
-#      in the toml to skip this) ----
+#      replay-able GIF of the whole run's activation maps (opt-in only --
+#      pass --save-gif to build one; off by default) ----
 if saveGif:
     try:
         gifPath = mrt.build_activation_gif(liveDir, curRun, fps=gifFps)
