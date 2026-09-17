@@ -48,20 +48,23 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 
 # name -> (config file, one-line description)
 TASKS = {
-    'motor':        ('motor.toml',        'LEFT vs RIGHT finger tapping'),
-    'checkerboard': ('checkerboard.toml',  'flickering checkerboard ON vs OFF'),
-    'gambling':     ('gambling.toml',      'blackjack WIN vs LOSE (tie as covariate)'),
+    'motor':           ('motor.toml',           'LEFT vs RIGHT finger tapping'),
+    'checkerboard':    ('checkerboard.toml',     'flickering checkerboard ON vs OFF'),
+    'checkerboard_lr': ('checkerboard_lr.toml',  'checkerboard CENTER vs LEFT vs RIGHT (3-way)'),
+    'gambling':        ('gambling.toml',         'blackjack WIN vs LOSE (tie as covariate)'),
 }
 
 # task -> 5 axial slice positions (mm), hard-coded to where each task's
 # activation actually falls rather than the generic auto-selected levels --
 # forwarded to taskActivation.py's --z-cuts, overriding the toml's zCuts for
 # that run. Motor cortex sits near the vertex (high z); visual cortex is
-# posterior/inferior (low z). gambling has no fixed region picked yet, so
-# it's absent here and keeps using its toml's own zCuts (currently auto).
+# posterior/inferior (low z), same for checkerboard_lr's 3 positions. gambling
+# has no fixed region picked yet, so it's absent here and keeps using its
+# toml's own zCuts (currently auto).
 Z_CUTS = {
-    'motor':        '0,16.25,32.5,48.75,65',
-    'checkerboard': '-36,-22.75,-9.5,3.75,17',
+    'motor':           '0,16.25,32.5,48.75,65',
+    'checkerboard':    '-36,-22.75,-9.5,3.75,17',
+    'checkerboard_lr': '-36,-22.75,-9.5,3.75,17',
 }
 
 

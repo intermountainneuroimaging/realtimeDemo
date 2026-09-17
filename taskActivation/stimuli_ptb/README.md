@@ -17,6 +17,7 @@ files so the real-time analysis assumes exactly what's actually presented.
 | `blackjack_task.m` | `../study_design/Blackjack_events.tsv` | this project's own two-card blackjack design: hit(1) or stay(2), any time in a 2.0s decision window, immediately reveals a pre-scripted win / lose / tie outcome (3.0s/trial), separated by a jittered 1.0-3.0s inter-trial interval -- 58 trials (24 win / 24 lose / 10 tie), ~5 minutes total |
 | `gambling_task.m` | `../study_design/HcpGambling_acq-ap_events.tsv` | the original HCP project's own card-guessing design, unchanged: reward / punishment / neutral -- kept as-is for `tutorial/`'s offline validation against the real ds000244 data |
 | `checkerboard_task.m` | `../study_design/Checkerboard_events.tsv` | 20s ON/OFF blocks: flickering full-contrast checkerboard vs fixation (6 reps + trailing rest, 13 blocks / 260s) |
+| `checkerboard_lr_task.m` | `../study_design/CheckerboardLR_events.tsv` | a 3-position visual localizer: a checkerboard patch flickers ON/OFF (fully visible <-> blank, not a black<->white reversal) in CENTER, LEFT, or RIGHT screen position per block, with a central fixation cross visible throughout -- 12s blocks, 4 reps of each + rest between every block, 300s total |
 
 All events.tsv files live in the top-level `study_design/` (not
 `tutorial/study_design/`) — the exact folder `taskActivation.py` itself
@@ -24,16 +25,23 @@ reads `eventsFile` from — so what MATLAB presents and what the live
 analysis assumes can never point at different copies of the same design.
 
 Each task has its own ready-to-use config — `../conf/motor.toml`,
-`../conf/checkerboard.toml`, `../conf/gambling.toml` — with the matching
-`eventsFile` and GLM contrast already set:
+`../conf/checkerboard.toml`, `../conf/checkerboard_lr.toml`,
+`../conf/gambling.toml` — with the matching `eventsFile` and GLM contrast
+already set:
 
-| Task | `conf/*.toml` | `eventsFile` | `glmCondA` | `glmCondB` |
-|---|---|---|---|---|
-| Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_finger` | `right_finger` |
-| Checkerboard | `checkerboard.toml` | `Checkerboard_events.tsv` | `checkerboard` | *(empty — single-condition beta map, i.e. ON vs the implicit rest/OFF baseline)* |
-| Gambling (blackjack) | `gambling.toml` | `Blackjack_events.tsv` | `win` | `lose` |
+| Task | `conf/*.toml` | `eventsFile` | `glmCondA` | `glmCondB` | `glmCondC` |
+|---|---|---|---|---|---|
+| Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_finger` | `right_finger` | — |
+| Checkerboard | `checkerboard.toml` | `Checkerboard_events.tsv` | `checkerboard` | *(empty — single-condition beta map, i.e. ON vs the implicit rest/OFF baseline)* | — |
+| Checkerboard L/R | `checkerboard_lr.toml` | `CheckerboardLR_events.tsv` | `center` | `left` | `right` |
+| Gambling (blackjack) | `gambling.toml` | `Blackjack_events.tsv` | `win` | `lose` | — |
 
-Run any of the three end to end with `../run_task.py` (see
+`glmCondC` is **task-specific** — only `checkerboard_lr.toml` sets it, and
+only `taskActivation.py`'s pipeline for that one task understands it (see
+"3-way (one-vs-rest) contrast" below). Every other task's toml leaves it
+unset, with no change to how those are analyzed.
+
+Run any of the four end to end with `../run_task.py` (see
 [README.md](../README.md#running-with-live-scanner-data) / `quickstart.sh
 <task>` in the main project) — e.g. `python ../run_task.py motor`.
 `gambling_task.m` (the original card-guess design) isn't wired to any
@@ -76,15 +84,22 @@ lost if a keypress held for a moment is seen a frame later).
 
 ## Task instructions screen
 
-`motor_task.m`, `checkerboard_task.m`, and `blackjack_task.m` each show a
-brief task-instructions screen — what the task is and what the subject's
+`motor_task.m`, `checkerboard_task.m`, `checkerboard_lr_task.m`, and
+`blackjack_task.m` each show a brief task-instructions screen — what the
+task is and what the subject's
 goal is — right after the window opens, **before** the "Waiting for scanner
 trigger..." screen. `ptb_show_instructions.m` draws the text and blocks
-until SPACE is pressed (via the same `KbQueue` mechanism as everything
-else here — see above), or returns early if Escape is pressed so the
-caller can abort before the run even starts. The instructions text itself
-is a fixed string in each task script, not a configurable option — edit it
-directly there if you want different wording for your site.
+until button 1 or 2 is pressed (via the same `KbQueue` mechanism as
+everything else here — see above), or returns early if Escape is pressed
+so the caller can abort before the run even starts. Using the same 1/2
+buttons as the MRI response box (rather than a keyboard-only SPACE bar the
+subject won't have in the scanner) means the subject dismisses the
+instructions with the same button(s) they'll use for real responses; the
+instructions text itself tells them to "ask the experimenter" if they have
+questions and "press any button" when ready, matching this listening
+window. The instructions text itself is a fixed string in each task
+script, not a configurable option — edit it directly there if you want
+different wording for your site.
 
 **Fits the real window, at any resolution:** rather than a fixed font size
 that only happens to fit at whatever resolution it was eyeballed on,
@@ -242,12 +257,13 @@ motor_task
 blackjack_task
 gambling_task
 checkerboard_task
+checkerboard_lr_task
 ```
 
-All four (except `gambling_task.m`, the original HCP task -- see below):
+All five (except `gambling_task.m`, the original HCP task -- see below):
 - **Show a task-instructions screen first** — a brief description of the
-  task and the subject's goal, dismissed with SPACE (or Escape to abort
-  before the run even starts). See "Task instructions screen" below.
+  task and the subject's goal, dismissed with button 1 or 2 (or Escape to
+  abort before the run even starts). See "Task instructions screen" below.
 - **Wait for a scanner trigger** before starting (`'TriggerKey'`, default
   `{'5','5%','t'}` — wire the scanner's sync pulse to send one of these, or
   pass `'TriggerKey', {'space'}` to press it yourself on the keyboard to
@@ -324,6 +340,46 @@ plain fixation during OFF blocks. Matches `taskActivation.py`'s
 `glmCondA=checkerboard` beta-weight map (no second condition — set
 `glmCondB=""` in the toml) when pointed at `Checkerboard_events.tsv`.
 
+**`checkerboard_lr_task.m`** — a full-contrast checkerboard patch flickers
+fully-visible <-> fully-blank (a true ON/OFF flicker, NOT the black/white
+reversal `checkerboard_task.m` uses) at `'FlickerHz'` (default 4) times per
+second, shown in the CENTER, LEFT, or RIGHT of the screen depending on the
+block; a small `+` fixation cross stays visible at screen center through
+every block (including the OFF half of every flicker cycle) so the subject
+can hold central gaze while the periphery is stimulated. Matches
+`taskActivation.py`'s task-specific 3-way one-vs-rest mode (`glmCondA=center`
+/ `glmCondB=left` / `glmCondC=right`) — see "3-way (one-vs-rest) contrast:
+checkerboard_lr only" below.
+
+## 3-way (one-vs-rest) contrast: checkerboard_lr only
+
+Every other task/toml in this project contrasts exactly two conditions
+(`glmCondA` minus `glmCondB`, or just `glmCondA`'s own beta weight). Setting
+`glmCondC` — a config key ONLY `conf/checkerboard_lr.toml` uses — switches
+`taskActivation.py`'s live mosaic to three separate contrasts instead:
+`glmCondA` vs the mean of `glmCondB`+`glmCondC`, `glmCondB` vs the mean of
+`glmCondA`+`glmCondC`, and `glmCondC` vs the mean of `glmCondA`+`glmCondB` —
+each thresholded and overlaid on the SAME brain slices in its own solid
+color: **blue** (`glmCondA`/center), **red** (`glmCondB`/left), **green**
+(`glmCondC`/right). The peak-voxel HRF-fit trace rows below the mosaic
+follow the same blue/red/green convention (`taskActivation.py` passes a
+matching `colors` list to `glm_voxel_traces()` for this case).
+
+This is a **task-specific** addition, not a generic feature every
+`conf/*.toml` can opt into — `glmCondC` and the 3-way rendering path
+(`glm_beta_contrast_one_vs_rest()`, `nilearn_stat_png_3way()`,
+`write_live_update_3way()` in `utils/rt_analysis.py`) exist alongside, not
+instead of, the normal 2-condition machinery every other task keeps using
+unchanged. Two things the normal path has that this one doesn't:
+- **The web Data Plots tab** — untouched; it still shows a single ROI
+  %-signal-change line from the first condition of interest (`center`),
+  same mechanism as every other task, not a 3-way view.
+- **The end-of-run activation GIF** — `conf/checkerboard_lr.toml` sets
+  `saveGif = false`. `build_activation_gif()` only knows how to replay the
+  standard single-contrast bundle format; `write_live_update_3way()`
+  deliberately skips writing that bundle at all (see its own docstring)
+  rather than produce a broken replay.
+
 ## Files
 
 - `ptb_read_events_tsv.m` — reads a BIDS-style `events.tsv` into a table
@@ -349,7 +405,8 @@ plain fixation during OFF blocks. Matches `taskActivation.py`'s
 - `ptb_write_event_log.m` — writes a tab-delimited log from a header +
   row cell array.
 - `motor_task.m`, `blackjack_task.m`, `gambling_task.m`,
-  `checkerboard_task.m` — the four task scripts described above.
+  `checkerboard_task.m`, `checkerboard_lr_task.m` — the five task scripts
+  described above.
 - `test_ptb_install.m` — standalone smoke test (see "Install and test
   Psychtoolbox" above); also the fastest way to discover your trigger/
   button box's real PTB key names.
@@ -364,11 +421,15 @@ reading Psychtoolbox's documented API and cross-checked against a real,
 working MATLAB/PTB experiment script from this lab (confirming the KbQueue
 response pattern, screen-size/display-selection conventions, and clean-exit
 structure above), and checked for structural/syntax correctness, but they
-have **not** been run end-to-end in MATLAB (`blackjack_task.m` included —
-no Octave/MATLAB was available to execute it in this environment either;
-its underlying design was instead validated indirectly, by confirming
-`Blackjack_events.tsv` and `conf/gambling.toml` produce the expected
-win/lose/tie GLM classification and a real end-to-end run against the mock
-scanner in Docker). Run `test_ptb_install.m` first, then a short test run of
+have **not** been run end-to-end in MATLAB (`blackjack_task.m` and
+`checkerboard_lr_task.m` included — no Octave/MATLAB was available to
+execute either in this environment; their underlying designs were instead
+validated indirectly, by confirming `Blackjack_events.tsv`/`gambling.toml`
+and `CheckerboardLR_events.tsv`/`checkerboard_lr.toml` each produce the
+expected GLM classification, and a real end-to-end run against the mock
+scanner in Docker -- for checkerboard_lr, including the 3-way one-vs-rest
+mosaic rendering itself, which was additionally verified directly with
+synthetic data on this machine's own Python/nilearn install before the
+Docker run). Run `test_ptb_install.m` first, then a short test run of
 each task (`'Windowed', true`, `'TriggerKey', {'space'}`) before a real
 session.

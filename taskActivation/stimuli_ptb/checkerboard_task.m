@@ -2,7 +2,7 @@ function checkerboard_task(varargin)
 %CHECKERBOARD_TASK Psychtoolbox presentation of a flickering-checkerboard
 %   visual localizer: alternating ON (flickering full-contrast checkerboard)
 %   / OFF (fixation only) blocks. Shows a brief task-instructions screen
-%   (dismiss with SPACE, or Escape to abort), waits for the scanner trigger,
+%   (dismiss with 1/2, or Escape to abort), waits for the scanner trigger,
 %   then presents ../study_design/Checkerboard_events.tsv (rest, checkerboard,
 %   x6, + a trailing rest block; 20s blocks, 13 blocks, 260s total). Matches
 %   this project's real-time GLM convention: point taskActivation.toml's
@@ -19,9 +19,14 @@ function checkerboard_task(varargin)
 %     'EventsFile'    path to events.tsv (default: Checkerboard_events.tsv)
 %     'Duration'      total run length in seconds (default: end of the last
 %                     event); pass nVols*TR to also show trailing rest
-%     'FlickerHz'     pattern-reversal rate during ON blocks, i.e. how many
-%                     times per second the checkerboard flips black<->white
-%                     (default 8 -- standard for a visual localizer)
+%     'FlickerHz'     how many times per second the checkerboard's state
+%                     changes during ON blocks (default 8): the sequence is
+%                     OFF (blank) -> ON (pattern A) -> OFF -> ON (pattern B,
+%                     the black<->white inverse of A) -> repeat, each state
+%                     lasting 1/FlickerHz -- so the same screen location
+%                     genuinely goes black, then white, then black, rather
+%                     than swapping directly between two checkerboards with
+%                     no blank in between
 %     'Windowed'      true for a windowed test window (default false)
 %     'ScreenWidth'   \
 %     'ScreenHeight'   } pixel resolution to open at, e.g. 1920/1080 for a
@@ -86,13 +91,22 @@ function checkerboard_task(varargin)
 
     function stimFor(win, trialType, tInEvent, ~)
         if strcmp(trialType, 'checkerboard')
-            if mod(floor(tInEvent * flickerHz), 2) == 0
+            % True flicker: fully OFF (blank -- nothing drawn, so the
+            % window's black background shows through) between each ON
+            % flash, and the ON flash itself alternates which squares are
+            % black vs white (texOn/texOff) so a given screen location
+            % genuinely reverses polarity from one flash to the next,
+            % rather than looking like a static image with two very
+            % similar-looking patterns swapped underneath it.
+            phase = mod(floor(tInEvent * flickerHz), 4);
+            if phase == 1
                 Screen('DrawTexture', win, texOn, [], destRect);
-            else
+            elseif phase == 3
                 Screen('DrawTexture', win, texOff, [], destRect);
             end
+            % phase == 0 or 2: blank -- draw nothing.
         else
-            DrawFormattedText(win, '+', 'center', 'center', [1 1 1]);
+            DrawFormattedText(win, '+', 'center', 'center', [0 1 0]);
         end
     end
 
@@ -101,8 +115,9 @@ function checkerboard_task(varargin)
         'with a plain + fixation cross.\n\n' ...
         'Goal: simply keep your eyes open and look at the checkerboard while it is ' ...
         'on screen, and rest your eyes on the + cross in between. No response or ' ...
-        'button press is needed -- just watch and stay still.\n\n' ...
-        'Press SPACE when you are ready to begin.'];
+        'button press is needed during the task -- just watch and stay still.\n\n' ...
+        'If you have any questions, ask the experimenter now. When you are ' ...
+        'comfortable, press any button to continue.'];
     if ptb_show_instructions(win, instructions)
         return
     end

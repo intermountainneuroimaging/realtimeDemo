@@ -56,12 +56,18 @@ def fit_text_stim(win, stim, base_height, max_w_frac=0.85, max_h_frac=0.85,
     win.clearBuffer()
 
 
-def show_instructions(win, text, continue_keys=('space', 'escape')):
+def show_instructions(win, text, continue_keys=('1', '2', 'escape')):
     """Show a task-instructions screen (task description + the subject's
     goal) and block until a continue key is pressed -- shown before
     wait_for_trigger()'s own "Waiting for scanner..." screen, so the subject
     sees what they're about to do before the run starts. Returns True if
     Escape was pressed instead of continuing (caller should return early).
+
+    Defaults to the digit buttons ('1'/'2') used everywhere else in this
+    project for an MRI-compatible response box, so the subject dismisses
+    the instructions with the same button(s) they'll use for real
+    responses, not a keyboard-only SPACE bar they won't have in the
+    scanner.
 
     FITS THE ACTUAL WINDOW, AT ANY RESOLUTION -- see fit_text_stim() above.
     """

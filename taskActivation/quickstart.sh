@@ -10,6 +10,7 @@
 #   ./quickstart.sh                     # default config (conf/taskActivation.toml)
 #   ./quickstart.sh motor               # LEFT vs RIGHT finger tapping (conf/motor.toml)
 #   ./quickstart.sh checkerboard        # flickering checkerboard ON vs OFF (conf/checkerboard.toml)
+#   ./quickstart.sh checkerboard_lr     # checkerboard CENTER vs LEFT vs RIGHT (conf/checkerboard_lr.toml)
 #   ./quickstart.sh gambling            # blackjack WIN vs LOSE (conf/gambling.toml)
 #   ./quickstart.sh motor --run 2       # same, but run number 2 instead of the toml's runNum
 #   ./quickstart.sh --run 2             # default config, run number 2 (task name optional)
@@ -83,9 +84,9 @@ done
 
 if [ -n "$TASK" ]; then
     case "$TASK" in
-        motor|checkerboard|gambling) ;;
+        motor|checkerboard|checkerboard_lr|gambling) ;;
         *)
-            echo "Unknown task: '$TASK' (expected motor, checkerboard, or gambling)" >&2
+            echo "Unknown task: '$TASK' (expected motor, checkerboard, checkerboard_lr, or gambling)" >&2
             echo "Run with no task argument to use the default conf/taskActivation.toml instead." >&2
             exit 1
             ;;

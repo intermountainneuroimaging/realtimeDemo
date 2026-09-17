@@ -179,6 +179,13 @@ contrastThresh = _cfg_opt('contrastThresh', 2.0, float)  # GLM map threshold (z 
 driftOrder = _cfg_opt('driftOrder', 1, int)             # polynomial drift terms in the GLM
 glmCondA = _cfg_opt('glmCondA', 'left_hand', str)       # GLM contrast: condA [- condB]
 glmCondB = _cfg_opt('glmCondB', 'right_hand', str)      # empty -> plot condA beta weight only
+glmCondC = _cfg_opt('glmCondC', '', str)                # TASK-SPECIFIC (checkerboard_lr only):
+                                                         # a 3rd condition switches the live mosaic
+                                                         # from the usual condA-vs-condB diverging
+                                                         # map to three one-vs-rest maps overlaid in
+                                                         # blue (condA)/red (condB)/green (condC) --
+                                                         # see conf/checkerboard_lr.toml's own comment.
+                                                         # Every other task's toml leaves this empty.
 glmZscore = _cfg_opt('glmZscore', True, bool)           # z-score the GLM map across voxels
 _rt = _cfg_opt('restTypes', [], list) or []             # explicit rest trial_types; [] = auto-detect
 restTypes = _rt if _rt else None
@@ -257,7 +264,10 @@ print(f"Data source: dicom | volumes: {nVols}")
 fullXlim = (0.0, max((nVols - 1) * TR, TR))
 # label for the GLM mosaic row, from the configured contrast
 _zsfx = ' (z)' if glmZscore else ' (%)'
-if glmCondB:
+if glmCondC:
+    glmLabel = (f"{glmCondA}/{glmCondB}/{glmCondC} one-vs-rest{_zsfx}: "
+               f"blue {glmCondA}>rest / red {glmCondB}>rest / green {glmCondC}>rest")
+elif glmCondB:
     glmLabel = f"{glmCondA} vs {glmCondB} GLM contrast{_zsfx}: red {glmCondA}>{glmCondB} / blue {glmCondB}>{glmCondA}"
 else:
     glmLabel = f"{glmCondA} GLM \u03b2-weight{_zsfx}: red positive / blue negative"
@@ -266,16 +276,20 @@ design = mrt.build_design_from_events(
     condA_types=[glmCondA], condB_types=([glmCondB] if glmCondB else []),
     rest_types=restTypes)
 
-# ---- generalized design: rest = implicit baseline; condA/condB = interest;
-#      every other trial_type becomes its own GLM covariate regressor ----
+# ---- generalized design: rest = implicit baseline; condA/condB(/condC) =
+#      interest; every other trial_type becomes its own GLM covariate
+#      regressor. condC is TASK-SPECIFIC (see the glmCondC comment above) --
+#      every other task's toml leaves it empty, so this call is unchanged
+#      for them (classify_conditions treats condC=None the same as before).
 cls = mrt.classify_conditions(events_rows, condA=glmCondA, condB=(glmCondB or None),
-                              rest_types=restTypes)
+                              condC=(glmCondC or None), rest_types=restTypes)
 print(f"Conditions -> interest: {cls['interest']} | covariates: {cls['covariates']} | "
       f"rest(implicit): {cls['rest'] or 'gaps only'}")
 Xglm, glm_names = mrt.make_glm_design(events_rows, nVols, TR, drift_order=driftOrder,
                                       rest_types=restTypes)
 print(f"GLM regressors: {glm_names}")
-conds = [glmCondA] + ([glmCondB] if glmCondB else [])   # for the peak-voxel HRF-fit rows
+conds = ([glmCondA] + ([glmCondB] if glmCondB else [])
+         + ([glmCondC] if glmCondC else []))   # for the peak-voxel HRF-fit rows
 
 # ---- baseline + first-condition-of-interest block ----
 interest_set = set(cls['interest']) or None
@@ -353,19 +367,22 @@ def _plot_worker(q):
     the NEXT volume's DICOM/motion-correction/GLM update, which have no
     dependency on a previous frame's plot finishing. Runs on the 'fork' start
     method's inherited copy of this module (Linux default; no re-import
-    needed), reading (args, kwargs) tuples from `q` until a None sentinel.
-    See where this is started for the queue-draining logic that keeps only
-    the newest not-yet-started frame pending -- this process alone doesn't
-    decide what to skip, it just renders whatever it's handed."""
+    needed), reading (func, args, kwargs) tuples from `q` until a None
+    sentinel -- `func` is whichever render function the caller queued
+    (mrt.write_live_update for every task, or mrt.write_live_update_3way for
+    checkerboard_lr's task-specific 3-way mosaic; see where this is queued
+    below). See where this worker is started for the queue-draining logic
+    that keeps only the newest not-yet-started frame pending -- this process
+    alone doesn't decide what to skip, it just renders whatever it's handed."""
     while True:
         item = q.get()
         if item is None:
             return
-        call_args, call_kwargs = item
+        func, call_args, call_kwargs = item
         try:
-            mrt.write_live_update(*call_args, **call_kwargs)
+            func(*call_args, **call_kwargs)
         except Exception as e:
-            print(f"[plot_worker] write_live_update failed: {e}")
+            print(f"[plot_worker] {func.__name__} failed: {e}")
 
 
 currentBidsRun = BidsRun()
@@ -538,16 +555,33 @@ for vol in range(1, nVols + 1):
 
         # LEFT vs RIGHT (or single-condition) map from an incremental GLM: refit
         # OLS on all rows seen so far (HRF-convolved regressors), contrast the
-        # configured conditions, z-scored across voxels.
+        # configured conditions, z-scored across voxels. glmCondC (TASK-SPECIFIC,
+        # checkerboard_lr only -- see its glmCondC comment above) switches this
+        # to three one-vs-rest maps instead of one condA-vs-condB map.
         contrast3d = None
+        threeway_maps = None
         if Yglm is not None:
-            cpct = mrt.glm_beta_contrast(Xglm[:vol], Yglm[:vol], glm_names,
-                                         condA=glmCondA, condB=(glmCondB or None),
-                                         zscore=glmZscore)
-            if cpct is not None:
+            def _embed(m):
+                if m is None:
+                    return None
                 flat = np.zeros(brain_mask_flat.size, np.float32)
-                flat[mask_idx] = cpct
-                contrast3d = flat.reshape(vol_shape)
+                flat[mask_idx] = m
+                return flat.reshape(vol_shape)
+            if glmCondC:
+                threeway_maps = (
+                    _embed(mrt.glm_beta_contrast_one_vs_rest(
+                        Xglm[:vol], Yglm[:vol], glm_names, glmCondA, [glmCondB, glmCondC],
+                        zscore=glmZscore)),
+                    _embed(mrt.glm_beta_contrast_one_vs_rest(
+                        Xglm[:vol], Yglm[:vol], glm_names, glmCondB, [glmCondA, glmCondC],
+                        zscore=glmZscore)),
+                    _embed(mrt.glm_beta_contrast_one_vs_rest(
+                        Xglm[:vol], Yglm[:vol], glm_names, glmCondC, [glmCondA, glmCondB],
+                        zscore=glmZscore)))
+            else:
+                contrast3d = _embed(mrt.glm_beta_contrast(
+                    Xglm[:vol], Yglm[:vol], glm_names, condA=glmCondA, condB=(glmCondB or None),
+                    zscore=glmZscore))
 
         # condition label for THIS frame (hrf-aligned), e.g. 'left hand' / 'REST'
         condLabel = mrt.active_condition_label(events_rows, ((vol - 1) - hrf_delay) * TR)
@@ -558,8 +592,12 @@ for vol in range(1, nVols + 1):
         # at the very end of the run.
         vtraces = []
         if Yglm is not None and vol >= Xglm.shape[1] + 2:
+            # match the mosaic's blue/red/green convention for the 3-way case
+            # (glm_voxel_traces' own default palette starts red/blue instead)
+            _trace_colors = ['tab:blue', 'tab:red', 'tab:green'] if glmCondC else None
             vtraces = mrt.glm_voxel_traces(Xglm[:vol], Yglm[:vol], glm_names, mask_idx,
-                                           vol_shape, TR, conds, events_rows)
+                                           vol_shape, TR, conds, events_rows,
+                                           colors=_trace_colors)
         if not vtraces and roi_peak is not None:
             # the full measured-vs-HRF-predicted trace above needs the GLM to
             # be estimable (min_on=4 "on" volumes for EACH condition of
@@ -588,15 +626,29 @@ for vol in range(1, nVols + 1):
                 plot_queue.get_nowait()
             except Exception:
                 break
-        plot_queue.put((
-            (liveDir, curRun, vol, taskName, psc3d, ref3d, affine, center, mapThreshPct,
-             roi_trace, glob_trace, cond_trace),
-            dict(condAName='ROI %\u0394S', condBName='peak %\u0394S',
-                caption='% change from baseline (red: increase, blue: decrease)',
-                traceALabel=f'ROI ({firstLabel}) %\u0394S', traceBLabel='whole-brain peak %\u0394S',
-                contrast3d=contrast3d, contrast_thresh=contrastThresh, condLabel=condLabel,
-                n_slices=nSlices, z_cuts=(zCuts or None), contrast_label=glmLabel,
-                voxel_traces=vtraces, full_xlim=fullXlim)))
+        if glmCondC:
+            # TASK-SPECIFIC (checkerboard_lr only): three one-vs-rest maps
+            # instead of the usual single condA-vs-condB bundle -- see
+            # write_live_update_3way's own docstring for why this skips the
+            # live_run*.npz bundle/GIF-replay path the normal case below uses.
+            plot_queue.put((
+                mrt.write_live_update_3way,
+                (liveDir, curRun, vol, taskName, ref3d, affine),
+                dict(maps=threeway_maps, labels=(glmCondA, glmCondB, glmCondC),
+                    colors=('Blues', 'Reds', 'Greens'), thresh=contrastThresh,
+                    condLabel=condLabel, n_slices=nSlices, z_cuts=(zCuts or None),
+                    voxel_traces=vtraces, full_xlim=fullXlim)))
+        else:
+            plot_queue.put((
+                mrt.write_live_update,
+                (liveDir, curRun, vol, taskName, psc3d, ref3d, affine, center, mapThreshPct,
+                 roi_trace, glob_trace, cond_trace),
+                dict(condAName='ROI %\u0394S', condBName='peak %\u0394S',
+                    caption='% change from baseline (red: increase, blue: decrease)',
+                    traceALabel=f'ROI ({firstLabel}) %\u0394S', traceBLabel='whole-brain peak %\u0394S',
+                    contrast3d=contrast3d, contrast_thresh=contrastThresh, condLabel=condLabel,
+                    n_slices=nSlices, z_cuts=(zCuts or None), contrast_label=glmLabel,
+                    voxel_traces=vtraces, full_xlim=fullXlim)))
 
 # stop the background plot worker and wait for it to finish whatever it's
 # mid-render on, BEFORE the guaranteed final write below -- otherwise the two
@@ -619,9 +671,36 @@ bidsInterface.closeStream(streamId)
 #      volumes stale -- this ensures the final current.png always reflects
 #      every volume) ----
 try:
+    _trace_colors = ['tab:blue', 'tab:red', 'tab:green'] if glmCondC else None
     vtraces = mrt.glm_voxel_traces(Xglm, Yglm, glm_names, mask_idx, vol_shape, TR,
-                                   conds, events_rows)
-    if vtraces and psc3d is not None and center is not None:
+                                   conds, events_rows, colors=_trace_colors)
+    if glmCondC:
+        if vtraces:
+            def _embed_final(m):
+                if m is None:
+                    return None
+                flat = np.zeros(brain_mask_flat.size, np.float32)
+                flat[mask_idx] = m
+                return flat.reshape(vol_shape)
+            final_maps = (
+                _embed_final(mrt.glm_beta_contrast_one_vs_rest(
+                    Xglm, Yglm, glm_names, glmCondA, [glmCondB, glmCondC], zscore=glmZscore)),
+                _embed_final(mrt.glm_beta_contrast_one_vs_rest(
+                    Xglm, Yglm, glm_names, glmCondB, [glmCondA, glmCondC], zscore=glmZscore)),
+                _embed_final(mrt.glm_beta_contrast_one_vs_rest(
+                    Xglm, Yglm, glm_names, glmCondC, [glmCondA, glmCondB], zscore=glmZscore)))
+            mrt.write_live_update_3way(
+                liveDir, curRun, nVols, taskName, ref3d, affine,
+                maps=final_maps, labels=(glmCondA, glmCondB, glmCondC),
+                colors=('Blues', 'Reds', 'Greens'), thresh=contrastThresh,
+                condLabel=condLabel, n_slices=nSlices, z_cuts=(zCuts or None),
+                voxel_traces=vtraces, full_xlim=fullXlim)
+            print(f"Final current.png includes peak-voxel HRF fits for: "
+                  f"{[t['title'].split(' peak')[0] for t in vtraces]}")
+        else:
+            print("[final] no live update ran during this run (baseline never froze / "
+                  "run too short) \u2014 skipping the peak-voxel HRF plot.")
+    elif vtraces and psc3d is not None and center is not None:
         mrt.write_live_update(
             liveDir, curRun, nVols, taskName, psc3d, ref3d, affine, center, mapThreshPct,
             roi_trace, glob_trace, cond_trace,

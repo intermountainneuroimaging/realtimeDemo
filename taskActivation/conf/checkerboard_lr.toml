@@ -1,0 +1,100 @@
+##### Configuration file: checkerboard_lr (3-position checkerboard localizer) #####
+#
+# Real-time, registration-free visual localizer, streaming DICOMs from a
+# real (or mock) scanner via dicomDir/. Pairs with
+# stimuli_ptb/checkerboard_lr_task.m (Psychtoolbox) or
+# study_design/CheckerboardLR_events.tsv presented by any other means: a
+# checkerboard patch flickers ON/OFF in one of three screen positions per
+# block -- CENTER, LEFT, or RIGHT -- 12s blocks, 4 reps of each + rest
+# between every block, 300s total.
+#
+# THREE-WAY CONTRAST (task-specific -- not a generic mechanism every
+# conf/*.toml can use): glmCondC is a NEW key only this task's pipeline
+# understands. When it's set, taskActivation.py switches its live mosaic
+# from the usual single condA-vs-condB diverging map to THREE separate
+# one-vs-rest contrasts overlaid on the same brain slices -- glmCondA (here,
+# center) vs the mean of the other two in BLUE, glmCondB (left) in RED,
+# glmCondC (right) in GREEN. See taskActivation.py's own glmCondC comment.
+# The end-of-run activation GIF isn't supported for this 3-way mode (see
+# saveGif below).
+#
+# Run: python run_task.py checkerboard_lr   (see ../run_task.py / ../quickstart.sh checkerboard_lr)
+
+title = "Real-Time fMRI Task Activation (checkerboard CENTER vs LEFT vs RIGHT)"
+
+# ---- generic real-time task-activation demo ----
+
+taskName = "CheckerboardLR"
+
+# events file (shipped) used to build the per-volume design at runtime.
+eventsFile = "CheckerboardLR_events.tsv"
+
+# condition display names -- three conditions of interest, each contrasted
+# against the mean of the other two (see the THREE-WAY CONTRAST note above).
+# 'rest' is auto-detected as the GLM's implicit baseline, same as every
+# other task here.
+#
+# Not configured here (fixed in taskActivation.py -- not deployment-specific):
+# TR is always inferred from the first real DICOM's RepetitionTime; hrf_delay
+# is derived from that TR; nVols falls back to an events-file estimate if the
+# stream can't report its own length; the BIDS 'subject' tag is bookkeeping
+# only. See the AUTO_TR_TIMEOUT / HRF_DELAY_SECONDS / NVOLS_FALLBACK_PADDING /
+# SUBJECT_NUM constants near the top of taskActivation.py.
+
+# ---- scanner (DICOM) streaming ----
+dicomNamePattern = "demo_{RUN:06d}_{TR:06d}.dcm"   # demo_SeriesNumber_InstanceNumber (zero-padded)
+minExpectedDicomSize = 300000
+runNum = [1]
+dicomTimeout = 30.0        # seconds to wait for EACH volume's DICOM before raising
+                           # (rtCommon's own default is only 5s -- too short for a real
+                           # scanner's startup gap or an occasional slow volume)
+demoStep = 0               # TESTING ONLY: artificial per-volume delay (s) passed to rtCommon's
+                           # getIncremental. 0 = no artificial delay (deliver/plot as soon as each
+                           # DICOM is there). Never sets TR -- TR always comes from the DICOM
+                           # header (stamped by the real scanner, or by mock_scanner.py from its
+                           # --tr / reference DICOM) and is never used for plot step size/timing,
+                           # regardless of this value. mock_scanner.py also reads this same key,
+                           # but only for its OWN write-pacing sleep between volumes -- it never
+                           # affects the TR it stamps into the DICOMs it writes. Set this to e.g.
+                           # 2 to pace both scripts like a live TR-paced scan for testing.
+
+# ---- analysis (registration-free) ----
+fwhm = 5                   # smoothing FWHM (mm)
+mapThreshPct = 0.5         # %-signal-change threshold for the per-frame activation overlay
+contrastThresh = 2.0       # GLM map threshold (z units when glmZscore=true) -- applied to
+                           # each of the three one-vs-rest maps independently
+driftOrder = 1             # polynomial drift terms in the GLM (per-run)
+glmCondA = "center"        # blue: center vs mean(left, right)
+glmCondB = "left"          # red:  left vs mean(center, right)
+glmCondC = "right"         # green: right vs mean(center, left) -- see the THREE-WAY
+                           # CONTRAST note above; leave unset/empty for every other task's toml
+glmZscore = true           # z-score each of the three maps across voxels
+restTypes = []             # trial_types to treat as implicit baseline; [] = auto-detect (rest/fixation/...)
+zCuts = []                 # fixed axial slice positions in mm, e.g. [-20,-5,10,25,40,55]; [] = auto
+                           # ([] also auto-picks the slice COUNT, fixed at 6 in taskActivation.py)
+baselineFrames = -1        # -1 = auto: use all frames before the first event as baseline
+maskPercentile = 98        # brain mask = ref > maskFraction * p[maskPercentile]
+maskMethod = "bet"          # 'bet' (FSL skull-strip; removes skull/neck) | 'epi' | 'threshold'
+maskFrac = 0.35             # BET fractional-intensity threshold (lower = larger brain)
+maskFraction = 0.12
+
+# ---- realtime display ----
+liveEveryTR = 1            # write a live update every N volumes
+liveDirName = "live"       # subfolder of rt-cloud/outDir/ the viewer watches
+saveGif = false            # the end-of-run activation-replay GIF only knows how to re-render
+                           # the standard single condA-vs-condB bundle format -- not yet
+                           # extended for this task's 3-map bundles, so it's disabled here
+                           # rather than producing a broken/empty GIF
+gifFps = 8                 # GIF playback speed (frames/sec) -- unused while saveGif=false
+
+# ---- web Data Plots tab (peak-ROI %SC from the FIRST block, 'center') ----
+plotTitle = 'Checkerboard localizer (peak-ROI % signal change, first center block)'
+plotXLabel = 'volume #'
+plotYLabel = 'ROI % signal change'
+plotXRangeLow = 0
+plotXRangeHigh = 150       # rough (300s design / ~TR=2s); the analysis itself uses the
+                           # real inferred TR regardless -- this only sizes the web widget
+plotYRangeLow = -2
+plotYRangeHigh = 4
+plotAutoRangeX = false
+plotAutoRangeY = true

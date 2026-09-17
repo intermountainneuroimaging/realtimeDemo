@@ -48,7 +48,7 @@ of the trial's scheduled outcome -- a display-only change; the events.tsv /
 GLM design driving the real-time analysis are unaffected.
 
 Shows a brief task-instructions screen (task description + the subject's
-goal; dismiss with SPACE, or Escape to abort) before waiting for the
+goal; dismiss with 1/2, or Escape to abort) before waiting for the
 scanner trigger.
 
 CARD/PROMPT/OUTCOME TEXT FITS THE ACTUAL WINDOW, AT ANY RESOLUTION: like the
@@ -294,7 +294,8 @@ def main():
         "Goal: win money by getting the best hand without going BUST. "
         "You must respond within the short decision window each round, or that "
         "round pays out nothing.\n\n"
-        "Press SPACE when you are ready to begin.")
+        "If you have any questions, ask the experimenter now. When you are "
+        "comfortable, press any button to continue.")
     if common.show_instructions(win, instructions):
         core.quit()
 

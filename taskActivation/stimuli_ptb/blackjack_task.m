@@ -2,7 +2,7 @@ function blackjack_task(varargin)
 %BLACKJACK_TASK Psychtoolbox presentation of this project's two-card
 %   blackjack task (reads ../study_design/Blackjack_events.tsv -- the same
 %   file taskActivation.py's live pipeline reads via conf/gambling.toml).
-%   Shows a brief task-instructions screen (dismiss with SPACE, or Escape to
+%   Shows a brief task-instructions screen (dismiss with 1/2, or Escape to
 %   abort) before waiting for the scanner trigger. Each trial (a fixed 3.0s
 %   in Blackjack_events.tsv): two cards are dealt face-up, and the subject
 %   may press '1' to HIT or '2' to STAY, any time during a 2.0s decision
@@ -151,7 +151,8 @@ function blackjack_task(varargin)
         'Goal: win money by getting the best hand without going BUST. ' ...
         'You must respond within the short decision window each round, or that ' ...
         'round pays out nothing.\n\n' ...
-        'Press SPACE when you are ready to begin.'];
+        'If you have any questions, ask the experimenter now. When you are ' ...
+        'comfortable, press any button to continue.'];
     if ptb_show_instructions(win, instructions)
         return
     end

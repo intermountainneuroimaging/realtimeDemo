@@ -15,7 +15,7 @@ dataset, there are no "_cue" get-ready periods here -- rest between blocks
 doubles as the get-ready period.
 
 Shows a brief task-instructions screen (task description + the subject's
-goal; dismiss with SPACE, or Escape to abort) before waiting for the
+goal; dismiss with 1/2, or Escape to abort) before waiting for the
 scanner trigger.
 
 Run (needs `pip install psychopy` and a display):
@@ -81,11 +81,12 @@ def main():
 
     instructions = (
         "LEFT/RIGHT FINGER TAPPING TASK\n\n"
-        "When you see LEFT FINGER, repeatedly tap the fingers of your left hand "
-        "(e.g. thumb to each fingertip in turn). When you see RIGHT FINGER, do the "
-        "same with your right hand. During the + fixation cross, relax and stay still.\n\n"
+        "When you see LEFT FINGER, repeatedly tap your left thumb and index finger "
+        "together. When you see RIGHT FINGER, do the same with your right thumb and "
+        "index finger. During the + fixation cross, relax and stay still.\n\n"
         "Goal: keep tapping steadily for the whole block shown, using the correct hand.\n\n"
-        "Press SPACE when you are ready to begin.")
+        "If you have any questions, ask the experimenter now. When you are "
+        "comfortable, press any button to continue.")
     if common.show_instructions(win, instructions):
         core.quit()
 

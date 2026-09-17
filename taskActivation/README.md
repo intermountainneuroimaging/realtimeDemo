@@ -16,9 +16,9 @@ same analysis against real HCP task data (HcpMotor + HcpGambling) before you
 ever point it at a scanner, and [stimuli/](stimuli/) (PsychoPy) or
 [stimuli_ptb/](stimuli_ptb/) (Psychtoolbox/MATLAB) for simple task-presentation
 scripts, so the whole thing can be run end to end with a real task rather than
-just a mock/replayed scan. Three tasks are ready to go out of the box — see
+just a mock/replayed scan. Four tasks are ready to go out of the box — see
 [Quick start](#quick-start-direct-testing-no-web-interface) below for
-`motor`/`checkerboard`/`gambling`.
+`motor`/`checkerboard`/`checkerboard_lr`/`gambling`.
 
 **Setup:** see **[INSTALLATION.md](INSTALLATION.md)** for one-time setup
 (Docker image, host-side Python deps, prefetching demo data, and installing
@@ -77,14 +77,15 @@ by default, since it's only relevant for a real scanner. It also auto-answers
 the `continue using localfiles?` prompt below, so the whole thing runs
 unattended.
 
-**Three ready-made tasks, one command each:** pass a task name to
+**Four ready-made tasks, one command each:** pass a task name to
 `quickstart.sh` (or to `run_task.py` directly — see below) to run that task's
 own `conf/*.toml` instead of the default:
 
 ```bash
-./quickstart.sh motor          # LEFT vs RIGHT finger tapping
-./quickstart.sh checkerboard   # flickering checkerboard ON vs OFF
-./quickstart.sh gambling       # blackjack WIN vs LOSE (tie as covariate)
+./quickstart.sh motor            # LEFT vs RIGHT finger tapping
+./quickstart.sh checkerboard     # flickering checkerboard ON vs OFF
+./quickstart.sh checkerboard_lr  # checkerboard CENTER vs LEFT vs RIGHT (3-way)
+./quickstart.sh gambling         # blackjack WIN vs LOSE (tie as covariate)
 ```
 
 Add `--run`/`-r <N>` (either before or after the task name, or on its own with
@@ -96,10 +97,11 @@ handy for bridging/streaming a different run each session:
 ./quickstart.sh --run 2        # default config, run number 2
 ```
 
-| Task | `conf/*.toml` | `eventsFile` | `glmCondA` vs `glmCondB` | Present it with |
+| Task | `conf/*.toml` | `eventsFile` | `glmCondA` vs `glmCondB` (`vs glmCondC`) | Present it with |
 |---|---|---|---|---|
 | Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_finger` vs `right_finger` | `stimuli_ptb/motor_task.m` or `stimuli/generic_motor_task.py` |
-| Checkerboard | `checkerboard.toml` | `Checkerboard_events.tsv` | `checkerboard` vs *(empty — beta map, i.e. vs the implicit rest/OFF baseline)* | `stimuli_ptb/checkerboard_task.m` |
+| Checkerboard | `checkerboard.toml` | `Checkerboard_events.tsv` | `checkerboard` vs *(empty — beta map, i.e. vs the implicit rest/OFF baseline)* | `stimuli_ptb/checkerboard_task.m` or `stimuli/checkerboard_task.py` |
+| Checkerboard L/R | `checkerboard_lr.toml` | `CheckerboardLR_events.tsv` | `center` vs `left` vs `right` (3-way one-vs-rest; task-specific, see [stimuli_ptb/README.md](stimuli_ptb/README.md#3-way-one-vs-rest-contrast-checkerboard_lr-only)) | `stimuli_ptb/checkerboard_lr_task.m` or `stimuli/checkerboard_lr_task.py` |
 | Gambling (blackjack) | `gambling.toml` | `Blackjack_events.tsv` | `win` vs `lose` (`tie` as covariate) | `stimuli_ptb/blackjack_task.m` or `stimuli/blackjack_task.py` |
 
 `run_task.py` is the thing actually doing the selection (`quickstart.sh
@@ -114,8 +116,9 @@ python projects/$PROJ_NAME/run_task.py motor --run 2   # --run forwards through,
 ```
 
 See [stimuli_ptb/README.md](stimuli_ptb/README.md) (or
-[stimuli/README.md](stimuli/README.md) for the PsychoPy equivalents of motor
-and gambling) for what each task actually looks like to the subject.
+[stimuli/README.md](stimuli/README.md) for the PsychoPy equivalents of motor,
+checkerboard, and gambling) for what each task actually looks like to the
+subject.
 
 The rest of this section is the same thing spelled out by hand, for anyone
 who wants to see or customize each step individually:
@@ -356,20 +359,23 @@ taskActivation/
 ├── TESTING.md                # verifying each component
 ├── PREFLIGHT.md              # short checklist to run before every live session
 ├── quickstart.sh              # one-command direct-testing run (see Quick start below)
-│                              # -- quickstart.sh motor/checkerboard/gambling picks a task
+│                              # -- quickstart.sh motor/checkerboard/checkerboard_lr/gambling picks a task
 ├── taskActivation.py         # main RT-Cloud analysis (registration-free, task-agnostic,
 │                              # dicom streaming) -- takes any conf/*.toml via --config
-├── run_task.py                # quick task selector: run_task.py {motor,checkerboard,gambling}
+├── run_task.py                # quick task selector: run_task.py {motor,checkerboard,checkerboard_lr,gambling}
 │                              # -- just picks the matching conf/*.toml and runs taskActivation.py
 ├── conf/
 │   ├── taskActivation.toml   # default/example config: HcpMotor (left_hand vs right_hand)
 │   ├── motor.toml            # LEFT vs RIGHT finger tapping (GenericMotorLR_events.tsv)
 │   ├── checkerboard.toml     # flickering checkerboard ON vs OFF (Checkerboard_events.tsv)
+│   ├── checkerboard_lr.toml  # checkerboard CENTER vs LEFT vs RIGHT, 3-way one-vs-rest
+│   │                          # (CheckerboardLR_events.tsv; task-specific glmCondC, see stimuli_ptb/README.md)
 │   └── gambling.toml         # blackjack WIN vs LOSE, tie as covariate (Blackjack_events.tsv)
 ├── study_design/
 │   ├── HcpMotor_acq-ap_events.tsv     # real ds000244 HcpMotor events (drives conf/taskActivation.toml)
 │   ├── GenericMotorLR_events.tsv      # this project's own LEFT/RIGHT-finger design (conf/motor.toml)
 │   ├── Checkerboard_events.tsv        # this project's own ON/OFF checkerboard design (conf/checkerboard.toml)
+│   ├── CheckerboardLR_events.tsv      # this project's own 3-position checkerboard design (conf/checkerboard_lr.toml)
 │   ├── Blackjack_events.tsv           # this project's own hit/stay blackjack design (conf/gambling.toml)
 │   └── HcpGambling_acq-ap_events.tsv  # real ds000244 HcpGambling events (tutorial/'s offline validation only)
 ├── templates/                 # anonymized Enhanced multi-frame DICOM header for mock_scanner
@@ -389,13 +395,16 @@ taskActivation/
 │   ├── common.py                    # shared trigger-wait / event-loop / timing-log helpers
 │   ├── hcp_motor_task.py            # presents the HcpMotor task (left/right hand, foot, tongue)
 │   ├── generic_motor_task.py        # presents this project's own LEFT/RIGHT-finger design (conf/motor.toml)
+│   ├── checkerboard_task.py         # presents this project's own flickering checkerboard ON/OFF design (conf/checkerboard.toml)
+│   ├── checkerboard_lr_task.py      # presents this project's own 3-position checkerboard design (conf/checkerboard_lr.toml)
 │   ├── blackjack_task.py            # presents this project's own hit/stay blackjack design (conf/gambling.toml)
 │   ├── hcp_gambling_task.py         # presents the original HcpGambling task (reward/punishment/neutral)
 │   ├── test_psychopy_install.py     # standalone smoke test for the PsychoPy install itself
 │   └── logs/                        # per-session timing-accuracy logs (gitignored)
 ├── stimuli_ptb/                # Psychtoolbox (MATLAB) presentation of the ready-made tasks
 │   ├── README.md                    # install/test Psychtoolbox, setup, running
-│   ├── motor_task.m, checkerboard_task.m, blackjack_task.m   # the three deployed task scripts
+│   ├── motor_task.m, checkerboard_task.m, checkerboard_lr_task.m,
+│   │   blackjack_task.m             # the four deployed task scripts
 │   ├── gambling_task.m              # the original HcpGambling card-guess task (not deployed to any conf/*.toml)
 │   ├── ptb_*.m                      # shared helpers (window setup, KbQueue, event-loop, instructions, logging)
 │   ├── test_ptb_install.m           # standalone smoke test for the Psychtoolbox install itself

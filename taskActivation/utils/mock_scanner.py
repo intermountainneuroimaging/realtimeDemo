@@ -66,10 +66,12 @@ def ellipsoid_brain(shape):
 
 
 def synthetic_series(events, nVols, TR, condA, condB, shape,
-                     seed=0, base=1200.0, resp=0.05):
-    """4D (rows, cols, slices, time) with two task-driven regions (condA/condB),
-    HRF-convolved from the real events, on an ellipsoid brain + noise. `shape`
-    is the reference DICOM's (rows, cols, nSlices)."""
+                     seed=0, base=1200.0, resp=0.05, condC=None):
+    """4D (rows, cols, slices, time) with two (or three, if `condC` is given
+    -- TASK-SPECIFIC, for checkerboard_lr's glmCondC 3-way design, see
+    taskActivation.py's own glmCondC comment) task-driven regions,
+    HRF-convolved from the real events, on an ellipsoid brain + noise.
+    `shape` is the reference DICOM's (rows, cols, nSlices)."""
     rng = np.random.default_rng(seed)
     X, names = mrt.make_glm_design(events, nVols, TR, drift_order=1)
     R, C, S = shape
@@ -80,12 +82,20 @@ def synthetic_series(events, nVols, TR, condA, condB, shape,
     A = np.zeros(shape, bool); A[R//2+6:R//2+11, C//2-3:C//2+2, S//2-2:S//2+3] = True
     B = np.zeros(shape, bool); B[R//2-11:R//2-6, C//2-3:C//2+2, S//2-2:S//2+3] = True
     A &= brain; B &= brain
+    regions = [A, B]
+    if condC:
+        regC = X[:, names.index(condC)] if condC in names else np.zeros(nVols)
+        Cm = np.zeros(shape, bool); Cm[R//2-3:R//2+2, C//2+6:C//2+11, S//2-2:S//2+3] = True
+        Cm &= brain
+        regions.append(Cm)
     series = np.zeros((R, C, S, nVols), np.float32)
     for t in range(nVols):
         v = anat + rng.normal(0, base*0.012, shape)
         v += base*resp*regA[t]*A + base*resp*regB[t]*B
+        if condC:
+            v += base*resp*regC[t]*Cm
         series[..., t] = v * brain
-    return series, (A, B)
+    return series, tuple(regions)
 
 
 def nifti_series(path, shape, nVols_hint=None):
@@ -210,6 +220,7 @@ def main(argv=None):
     task = str(cfg.get('taskName', 'HcpMotor'))
     condA = str(cfg.get('glmCondA', 'left_hand'))
     condB = str(cfg.get('glmCondB', 'right_hand'))
+    condC = str(cfg.get('glmCondC', '') or '') or None   # TASK-SPECIFIC (checkerboard_lr only)
     events_file = str(cfg.get('eventsFile', f'{task}_acq-ap_events.tsv'))
     out_dir = args.out or os.path.join(PROJECT_ROOT, 'dicomDir')
     os.makedirs(out_dir, exist_ok=True)
@@ -227,8 +238,9 @@ def main(argv=None):
         events = mrt.read_events_tsv(os.path.join(PROJECT_ROOT, 'study_design', events_file))
         last = max(o + d for o, d, _ in events)
         nVols = args.nvols or int(np.ceil((last + 10) / TR))
-        series, _ = synthetic_series(events, nVols, TR, condA, condB, shape)
-        print(f"[mock] synthetic {task}: {nVols} vols, condA={condA} condB={condB}")
+        series, _ = synthetic_series(events, nVols, TR, condA, condB, shape, condC=condC)
+        _condc_txt = f" condC={condC}" if condC else ""
+        print(f"[mock] synthetic {task}: {nVols} vols, condA={condA} condB={condB}{_condc_txt}")
     else:
         series, _ = nifti_series(args.source, shape)
         nVols = args.nvols or series.shape[3]

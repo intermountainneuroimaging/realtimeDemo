@@ -8,7 +8,12 @@ function aborted = ptb_show_instructions(win, instructionsText, continueKeys)
 %
 %   instructionsText - the text to show.
 %   continueKeys     - cellstr of PTB key names that dismiss the screen
-%                       (default {'space'}).
+%                       (default {'1', '1!', '2', '2@'} -- the digit
+%                       buttons used everywhere else in this project for
+%                       an MRI-compatible response box, so the subject
+%                       dismisses the instructions with the same button(s)
+%                       they'll use for real responses, not a keyboard-only
+%                       SPACE bar they won't have in the scanner).
 %
 %   Returns true if Escape was pressed instead (caller should return early
 %   -- its own onCleanup still releases the window/KbQueue as usual).
@@ -26,7 +31,7 @@ function aborted = ptb_show_instructions(win, instructionsText, continueKeys)
 %   per-frame KbCheck could miss a brief keydown pulse.
 
     if nargin < 3 || isempty(continueKeys)
-        continueKeys = {'space'};
+        continueKeys = {'1', '1!', '2', '2@'};
     end
 
     % 0.82/0.85 leave an 18%-of-width, 15%-of-height margin so lines don't

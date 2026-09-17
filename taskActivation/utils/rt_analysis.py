@@ -195,13 +195,15 @@ def is_rest_type(name):
     return any(p in n for p in REST_PATTERNS)
 
 
-def classify_conditions(rows, condA=None, condB=None, rest_types=None):
+def classify_conditions(rows, condA=None, condB=None, condC=None, rest_types=None):
     """Split the events' trial_types into rest (implicit baseline), the
-    conditions of interest (condA/condB), and additional covariates (everything
-    else). Returns a dict with keys: rest, interest, covariates, modeled."""
+    conditions of interest (condA/condB/condC), and additional covariates
+    (everything else). `condC` is optional (default None), for a 3-way
+    one-vs-rest design (e.g. checkerboard_lr) -- every other caller just
+    omits it. Returns a dict with keys: rest, interest, covariates, modeled."""
     all_types = sorted(set(tt for _, _, tt in rows))
     rest = set(rest_types) if rest_types is not None else {t for t in all_types if is_rest_type(t)}
-    interest = [c for c in (condA, condB) if c]
+    interest = [c for c in (condA, condB, condC) if c]
     modeled = [t for t in all_types if t not in rest]
     covariates = [t for t in modeled if t not in interest]
     return {'rest': sorted(rest), 'interest': interest,
@@ -516,6 +518,85 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
     return True
 
 
+def nilearn_stat_png_3way(out_png, ref3d, affine, title, maps, labels, colors,
+                          thresh=2.0, n_slices=6, z_cuts=None, frame=None,
+                          voxel_traces=None, full_xlim=None):
+    """Realtime plot via nilearn.plot_stat_map as a single-row AXIAL MOSAIC,
+    like nilearn_stat_png() above, but with THREE separately-thresholded
+    one-vs-rest contrast maps overlaid in three distinct solid colors
+    instead of one red/blue diverging map -- task-specific (see
+    checkerboard_lr / conf/checkerboard_lr.toml's glmCondC), not used by
+    any other task. `maps` is a 3-tuple of 3D contrast volumes (or None
+    entries, before each is estimable -- see glm_beta_contrast_one_vs_rest());
+    `labels`/`colors` matching 3-tuples (colors are matplotlib sequential
+    colormap names, e.g. ('Blues', 'Reds', 'Greens') -- each map is
+    one-sided (only cond > mean(others) is shown), so a diverging colormap
+    isn't needed. `voxel_traces`/`full_xlim` behave exactly as in
+    nilearn_stat_png()."""
+    try:
+        import nibabel as nib
+        from nilearn import plotting
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+    if z_cuts:
+        cuts = list(z_cuts)
+    else:
+        cuts = _brain_z_cuts(ref3d, affine, n_slices) or n_slices
+    bg = nib.Nifti1Image(np.asarray(ref3d, np.float32), affine)
+
+    traces = voxel_traces or []
+    n_brain = 1
+    nrows = n_brain + len(traces)
+    height_ratios = [3.0] * n_brain + [1.5] * len(traces)
+    fig_h = 2.9 * n_brain + 2.0 * len(traces)
+    fig = plt.figure(figsize=(13, fig_h), facecolor='black')
+    gs = fig.add_gridspec(nrows, 1, height_ratios=height_ratios, hspace=0.45)
+    ax_top = fig.add_subplot(gs[0])
+    display = plotting.plot_anat(bg, display_mode='z', cut_coords=cuts, colorbar=False,
+                                 black_bg=True, figure=fig, axes=ax_top)
+    any_map = False
+    for m, cmap in zip(maps, colors):
+        if m is None or not np.isfinite(m).any() or np.nanmax(m) < thresh:
+            continue
+        any_map = True
+        display.add_overlay(nib.Nifti1Image(np.asarray(m, np.float32), affine),
+                            threshold=thresh, cmap=cmap, colorbar=False)
+    cap = ' / '.join(f'{c}: {lbl}' for lbl, c in zip(labels, ('blue', 'red', 'green')))
+    ax_top.set_title(f"{title}  ({cap})" if any_map else f"{title}  (not yet estimable)",
+                     color='white', fontsize=11, fontweight='bold', y=-0.22)
+    if frame is not None:
+        bbox = ax_top.get_position()
+        fig.text(bbox.x0 + 0.006, bbox.y1 - 0.015, f"frame {int(frame)}",
+                 color='yellow', fontsize=16, fontweight='bold', va='top', ha='left',
+                 bbox=dict(facecolor='black', alpha=0.7, pad=3, edgecolor='none'))
+    t_xlim = full_xlim
+    if t_xlim is None and traces:
+        t_lo = min(float(np.asarray(tr['t']).min()) for tr in traces)
+        t_hi = max(float(np.asarray(tr['t']).max()) for tr in traces)
+        t_xlim = (t_lo, t_hi)
+    for i, tr in enumerate(traces):
+        ax = fig.add_subplot(gs[n_brain + i], facecolor='black')
+        t = np.asarray(tr['t'])
+        for (b0, b1) in tr.get('blocks', []):
+            ax.axvspan(b0, b1, color=tr.get('color', 'tab:red'), alpha=0.12)
+        ax.plot(t, tr['measured'], color='white', lw=1.4, label='measured %ΔS')
+        if tr.get('predicted') is not None:
+            ax.plot(t, tr['predicted'], color=tr.get('color', 'tab:red'), lw=1.8,
+                    ls='--', label='HRF-predicted')
+        ax.axhline(0, color='gray', lw=0.5)
+        ax.set_xlim(*t_xlim)
+        ax.set_title(tr['title'], color='white', fontsize=9)
+        ax.set_xlabel('time (s)', color='white'); ax.set_ylabel('% ΔS', color='white')
+        ax.tick_params(colors='white', labelsize=7)
+        for s in ax.spines.values():
+            s.set_color('white')
+        ax.legend(loc='upper right', fontsize=7, facecolor='black', labelcolor='white')
+    fig.savefig(out_png, dpi=110, facecolor='black')
+    plt.close(fig)
+    return True
+
+
 def _matplotlib_montage_png(out_png, zmap3d, ref3d, peak, thresh, title,
                             condAName='A', condBName='B', frame=None):
     import matplotlib
@@ -686,6 +767,31 @@ def write_live_update(liveDir, run, vol, runLabel, zmap3d, ref3d, affine, peak, 
     except Exception as e:
         print(f"[live] activation plot skipped: {e}")
     return fn
+
+
+def write_live_update_3way(liveDir, run, vol, runLabel, ref3d, affine,
+                           maps, labels, colors, thresh=2.0, condLabel=None,
+                           n_slices=6, z_cuts=None, voxel_traces=None, full_xlim=None):
+    """The 3-way sibling of write_live_update() above -- task-specific (see
+    checkerboard_lr / conf/checkerboard_lr.toml's glmCondC), used ONLY when
+    a task's config sets glmCondC. Renders current.png via
+    nilearn_stat_png_3way() instead of nilearn_stat_png(). Unlike
+    write_live_update(), this does NOT write a live_run*.npz bundle or
+    advance latest.txt: those exist solely so build_activation_gif() can
+    re-render every saved frame into an end-of-run replay GIF, and that
+    replay doesn't understand this 3-map format -- see conf/checkerboard_lr.toml's
+    saveGif=false. The live web viewer itself only ever polls current.png
+    directly, so skipping the bundle costs nothing there."""
+    os.makedirs(liveDir, exist_ok=True)
+    out_png = os.path.join(liveDir, 'current.png')
+    cond_txt = f" | {condLabel}" if condLabel else ""
+    title = f"{runLabel} | run {run} | vol {vol}{cond_txt}"
+    try:
+        nilearn_stat_png_3way(out_png, ref3d, affine, title, maps, labels, colors,
+                              thresh=thresh, n_slices=n_slices, z_cuts=z_cuts,
+                              frame=vol, voxel_traces=voxel_traces, full_xlim=full_xlim)
+    except Exception as e:
+        print(f"[live] activation plot skipped: {e}")
 
 
 def build_activation_gif(liveDir, run, fps=8, out_path=None, verbose=True):
@@ -910,6 +1016,45 @@ def glm_beta_contrast(X, Y, names, condA='left_hand', condB='right_hand', min_on
     except Exception:
         return None
     out = (beta[iA] - beta[iB]) if use_contrast else beta[iA]
+    out = np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+    if zscore:
+        s = out.std()
+        out = (out - out.mean()) / (s + 1e-9)
+    else:
+        out = 100.0 * out / (np.abs(beta[iI]) + 1e-6)
+    return out.astype(np.float32)
+
+
+def glm_beta_contrast_one_vs_rest(X, Y, names, cond, others, min_on=4, zscore=True):
+    """Like glm_beta_contrast(), but the contrast is `cond` minus the MEAN of
+    `others` (a list of condition names) rather than a single second
+    condition -- for a 3-way one-vs-rest design where each of 3 conditions
+    is contrasted against the average of the other two (task-specific; see
+    checkerboard_lr / conf/checkerboard_lr.toml's glmCondC). Returns None
+    until `cond` AND every condition in `others` has its own min_on
+    "on" volumes."""
+    if cond not in names:
+        return None
+    iC = names.index(cond); iI = names.index('intercept')
+    if X.shape[0] < X.shape[1] + 2:                       # need more rows than params
+        return None
+    if int((X[:, iC] > 0.1).sum()) < min_on:
+        return None
+    other_idx = []
+    for o in others:
+        if o not in names:
+            return None
+        io = names.index(o)
+        if int((X[:, io] > 0.1).sum()) < min_on:
+            return None
+        other_idx.append(io)
+    if not other_idx:
+        return None
+    try:
+        beta, _, _, _ = np.linalg.lstsq(X, Y, rcond=None)   # K x nVox
+    except Exception:
+        return None
+    out = beta[iC] - beta[other_idx].mean(axis=0)
     out = np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
     if zscore:
         s = out.std()
