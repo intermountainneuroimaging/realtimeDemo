@@ -42,6 +42,7 @@ function [textSize, wrapat] = ptb_fit_text_size(win, text, targetWFrac, targetHF
         wrapat = max(20, floor(targetW / avgCharW));
 
         [nx, ny, textbounds, cache] = DrawFormattedText2(text, 'win', win, 'sx', 'center', 'sy', 'center', 'baseColor', [1 1 1], 'wrapat', wrapat, 'cacheOnly', 1);   % cacheOnly=1: measure, don't draw 
+        if RectHeight(textbounds) <= targetH || textSize <= minTextSize
             break
         end
         textSize = textSize - 2;
