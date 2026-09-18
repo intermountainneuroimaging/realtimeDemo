@@ -3,7 +3,7 @@
 test_psychopy_install.py -- minimal smoke test to confirm PsychoPy is
 installed AND its display backend actually works, before running
 generic_motor_task.py / checkerboard_1cond_task.py / checkerboard_2cond_task.py
-/ checkerboard_3cond_task.py / blackjack_task.py for real. A successful
+/ checkerboard_3cond_task.py / blackjack_task.py / motor_guessing_task.py for real. A successful
 `pip install` doesn't guarantee this -- the window backend (pyglet by
 default) is the part that most often fails, silently or not, depending on
 the OS/GPU drivers.
@@ -65,7 +65,7 @@ def main():
               "to your terminal app in System Settings > Privacy & Security).")
     print("\n[ok] PsychoPy install looks good -- you're ready to run generic_motor_task.py / "
           "checkerboard_1cond_task.py / checkerboard_2cond_task.py / "
-          "checkerboard_3cond_task.py / blackjack_task.py.")
+          "checkerboard_3cond_task.py / blackjack_task.py / motor_guessing_task.py.")
     core.quit()
 
 

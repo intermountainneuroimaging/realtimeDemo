@@ -2,7 +2,7 @@ function test_ptb_install(varargin)
 %TEST_PTB_INSTALL Minimal smoke test to confirm Psychtoolbox-3 is installed
 %   AND its display/keyboard backend actually works, before running
 %   motor_task.m / checkerboard_1cond_task.m / checkerboard_2cond_task.m /
-%   checkerboard_3cond_task.m / blackjack_task.m for real.
+%   checkerboard_3cond_task.m / blackjack_task.m / motor_guessing_task.m for real.
 %   Installing Psychtoolbox doesn't guarantee this -- the window backend
 %   (OpenGL/GStreamer drivers) and low-level keyboard queue are the parts
 %   that most often fail, silently or not, depending on the OS/GPU drivers.
@@ -96,5 +96,5 @@ function test_ptb_install(varargin)
     end
     fprintf(['\n[ok] Psychtoolbox install looks good -- you''re ready to run motor_task.m /\n' ...
              'checkerboard_1cond_task.m / checkerboard_2cond_task.m / checkerboard_3cond_task.m /\n' ...
-             'blackjack_task.m.\n']);
+             'blackjack_task.m / motor_guessing_task.m.\n']);
 end

@@ -44,6 +44,13 @@ def snapshots_motor(win, shoot):
     stims['right_hand'].draw(); shoot('motor', 'right_hand')
 
 
+def snapshots_motor_guessing(win, shoot):
+    import motor_guessing_task
+    stims, fixation = motor_guessing_task.build_stims(win)
+    fixation.draw(); shoot('motor_guessing', 'rest')
+    stims['move'].draw(); shoot('motor_guessing', 'move')
+
+
 def snapshots_checkerboard_1cond(win, shoot):
     from psychopy import visual
     import checkerboard_1cond_task as t
@@ -108,6 +115,7 @@ def snapshots_gambling(win, shoot):
 
 ALL = {
     'motor': snapshots_motor,
+    'motor_guessing': snapshots_motor_guessing,
     'checkerboard_1cond': snapshots_checkerboard_1cond,
     'checkerboard_2cond': snapshots_checkerboard_2cond,
     'checkerboard_3cond': snapshots_checkerboard_3cond,

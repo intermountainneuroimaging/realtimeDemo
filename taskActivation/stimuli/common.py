@@ -1,7 +1,8 @@
 """-----------------------------------------------------------------------------
 stimuli/common.py -- shared PsychoPy helpers for the task scripts in this
 folder (generic_motor_task.py, checkerboard_1cond_task.py,
-checkerboard_2cond_task.py, checkerboard_3cond_task.py, blackjack_task.py --
+checkerboard_2cond_task.py, checkerboard_3cond_task.py, blackjack_task.py,
+motor_guessing_task.py --
 also used by obsolete/stimuli/hcp_motor_task.py and hcp_gambling_task.py
 before they were archived, see obsolete/README.md).
 

@@ -15,8 +15,8 @@ task timing in MATLAB.
 ## Why this matters: one source of truth for timing
 
 `generic_motor_task.py`, `checkerboard_1cond_task.py`,
-`checkerboard_2cond_task.py`, `checkerboard_3cond_task.py`, and
-`blackjack_task.py` read the exact same `study_design/*_events.tsv` files
+`checkerboard_2cond_task.py`, `checkerboard_3cond_task.py`,
+`blackjack_task.py`, and `motor_guessing_task.py` read the exact same `study_design/*_events.tsv` files
 `taskActivation.py`'s real-time GLM design is built from. There's no
 separate, hand-copied timing table to keep in sync — whatever the subject
 is actually shown **is** what the analysis assumes happened, by
@@ -28,6 +28,7 @@ construction.
 | `checkerboard_1cond_task.py` | `../study_design/Checkerboard1Cond_events.tsv` | this project's own flickering-checkerboard ON/OFF localizer (`conf/checkerboard_1cond.toml`) -- 20s ON/OFF blocks, genuine OFF/pattern-A/OFF/pattern-B flicker (not two patterns swapped with no blank); the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_1cond_task.m` |
 | `checkerboard_2cond_task.py` | `../study_design/Checkerboard2Cond_events.tsv` | the LEFT/RIGHT half of `checkerboard_3cond_task.py` (`conf/checkerboard_2cond.toml`) -- no CENTER condition, an ordinary 2-condition GLM contrast, shorter run; the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_2cond_task.m` |
 | `checkerboard_3cond_task.py` | `../study_design/Checkerboard3Cond_events.tsv` | this project's own 3-position checkerboard localizer (`conf/checkerboard_3cond.toml`) -- CENTER is a small foveal square, LEFT/RIGHT are full-height bars flush to the screen edge, same OFF/A/OFF/B flicker as `checkerboard_1cond_task.py`, 3-way one-vs-rest GLM contrast; the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_3cond_task.m` |
+| `motor_guessing_task.py` | `../study_design/MotorGuessing_events.tsv` | the secret-hand "guess the hand" game (`conf/motor_guessing.toml`) -- the participant privately picks a hand and moves it (squeezing a fist and relaxing, like a stress ball) whenever MOVE is on screen; 10s baseline then 5 x (30s MOVE + 20s rest, the last rest cut to 10s), 250s total -- the same length as `generic_motor_task.py`; nothing logs which hand; the Psychtoolbox equivalent is `../stimuli_ptb/motor_guessing_task.m` |
 | `blackjack_task.py` | `../study_design/Blackjack_events.tsv` | this project's own two-card blackjack design (`conf/gambling.toml`) -- hit(1)/stay(2) on a dealt hand, then a pre-scripted win/lose/tie outcome; the Psychtoolbox equivalent is `../stimuli_ptb/blackjack_task.m` |
 
 The original HCP motor and card-guess presentation scripts
@@ -100,7 +101,7 @@ if that keeps happening once you're actually trying to use a keyboard.
 
 Once that passes, you're ready to run `generic_motor_task.py` /
 `checkerboard_1cond_task.py` / `checkerboard_2cond_task.py` /
-`checkerboard_3cond_task.py` / `blackjack_task.py` below.
+`checkerboard_3cond_task.py` / `blackjack_task.py` / `motor_guessing_task.py` below.
 
 ## Running
 
@@ -111,12 +112,13 @@ python checkerboard_1cond_task.py
 python checkerboard_2cond_task.py
 python checkerboard_3cond_task.py
 python blackjack_task.py
+python motor_guessing_task.py
 ```
 
-All five:
+All six:
 - `generic_motor_task.py`, `checkerboard_1cond_task.py`,
-  `checkerboard_2cond_task.py`, `checkerboard_3cond_task.py`, and
-  `blackjack_task.py` **show a task-instructions screen first** — a brief
+  `checkerboard_2cond_task.py`, `checkerboard_3cond_task.py`,
+  `blackjack_task.py`, and `motor_guessing_task.py` **show a task-instructions screen first** — a brief
   description of the task and
   the subject's goal, dismissed with button 1 or 2 (or Escape to abort
   before the run even starts) — the same digit buttons used for real
@@ -149,6 +151,14 @@ during the 30s squeezing blocks; plain fixation (`+`) during the 10s rest
 blocks between them (no get-ready cue -- rest doubles as the lead-in).
 Matches `conf/motor.toml`'s `glmCondA=left_hand` / `glmCondB=right_hand`
 contrast for live analysis.
+
+**`motor_guessing_task.py`** — the secret-hand movement game. The participant silently picks a
+hand (the instructions tell them NOT to tell the experimenter) and, whenever a bold green "MOVE" cue is up, moves that same hand (squeezes it into a fist and relaxes it, repeatedly, like a stress ball); plain fixation (`+`) means relax. The cue never names a hand and
+nothing in the script or its timing log records which one was used, so the experimenter
+stays blind. Analyzed live as ONE condition (`glmCondA=move`, vs the implicit rest
+baseline) — not left-vs-right, since the hand isn't known — and at the end the group guesses
+the hand from the map's laterality: a hand drives the OPPOSITE motor cortex (right-hemisphere
+activation = left hand). Optional; run it last or skip it.
 
 **`checkerboard_1cond_task.py`** — a flickering black<->white checkerboard
 patch centered on screen during 20s ON blocks: a genuine flicker
@@ -242,7 +252,7 @@ helper either) — see its own module docstring for details.
   itself — only by the task scripts.
 - `generic_motor_task.py`, `checkerboard_1cond_task.py`,
   `checkerboard_2cond_task.py`, `checkerboard_3cond_task.py`,
-  `blackjack_task.py` — the five task scripts described above.
+  `blackjack_task.py`, `motor_guessing_task.py` — the six task scripts described above.
 - `test_psychopy_install.py` — standalone smoke test (see "Install and test
   PsychoPy" above); no events.tsv or trigger involved, just confirms the
   install itself works.

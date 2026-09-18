@@ -18,6 +18,7 @@ files so the real-time analysis assumes exactly what's actually presented.
 | `checkerboard_1cond_task.m` | `../study_design/Checkerboard1Cond_events.tsv` | 20s ON/OFF blocks: full-contrast checkerboard (genuine OFF/A/OFF/B flicker, not two patterns swapped with no blank) vs fixation (6 reps + trailing rest, 13 blocks / 260s) |
 | `checkerboard_2cond_task.m` | `../study_design/Checkerboard2Cond_events.tsv` | the LEFT/RIGHT half of `checkerboard_3cond_task.m` with CENTER dropped entirely -- an ordinary 2-condition design, not the 3-way one-vs-rest -- 12s blocks, 4 reps of each + rest between every block, 204s total |
 | `checkerboard_3cond_task.m` | `../study_design/Checkerboard3Cond_events.tsv` | a 3-position visual localizer flickering OFF/A/OFF/B (same reversal-with-blank flicker as `checkerboard_1cond_task.m`) in CENTER, LEFT, or RIGHT screen position per block -- CENTER is a small foveal square, LEFT/RIGHT are full window-height bars flush to the screen edge -- with a central fixation cross visible throughout -- 12s blocks, 4 reps of each + rest between every block, 300s total |
+| `motor_guessing_task.m` | `../study_design/MotorGuessing_events.tsv` | the secret-hand "guess the hand" game: the participant privately picks a hand and moves it (squeezing a fist and relaxing, like a stress ball) whenever MOVE is on screen -- 10s baseline, then 5 x (30s MOVE + 20s rest, the last rest cut to 10s), 250s total -- the same length as `motor_task.m`; the cue never names a hand and nothing logs which one was used |
 
 All events.tsv files live in the top-level `study_design/` (not
 `tutorial/study_design/`) — the exact folder `taskActivation.py` itself
@@ -26,7 +27,7 @@ analysis assumes can never point at different copies of the same design.
 
 Each task has its own ready-to-use config — `../conf/motor.toml`,
 `../conf/checkerboard_1cond.toml`, `../conf/checkerboard_2cond.toml`,
-`../conf/checkerboard_3cond.toml`, `../conf/gambling.toml` — with the
+`../conf/checkerboard_3cond.toml`, `../conf/gambling.toml`, `../conf/motor_guessing.toml` — with the
 matching `eventsFile` and GLM contrast already set:
 
 | Task | `conf/*.toml` | `eventsFile` | `glmCondA` | `glmCondB` | `glmCondC` |
@@ -36,13 +37,14 @@ matching `eventsFile` and GLM contrast already set:
 | Checkerboard (2-condition) | `checkerboard_2cond.toml` | `Checkerboard2Cond_events.tsv` | `left` | `right` | — |
 | Checkerboard (3-condition) | `checkerboard_3cond.toml` | `Checkerboard3Cond_events.tsv` | `center` | `left` | `right` |
 | Gambling (blackjack) | `gambling.toml` | `Blackjack_events.tsv` | `win` | `lose` | — |
+| Motor guessing (optional) | `motor_guessing.toml` | `MotorGuessing_events.tsv` | `move` | *(empty — single-condition beta map vs the implicit rest baseline)* | — |
 
 `glmCondC` is **task-specific** — only `checkerboard_3cond.toml` sets it, and
 only `taskActivation.py`'s pipeline for that one task understands it (see
 "3-way (one-vs-rest) contrast" below). Every other task's toml leaves it
 unset, with no change to how those are analyzed.
 
-Run any of the five end to end with `../run_task.py` (see
+Run any of the six end to end with `../run_task.py` (see
 [README.md](../README.md#running-with-live-scanner-data) / `quickstart.sh
 <task>` in the main project) — e.g. `python ../run_task.py motor`. The
 original HCP motor and card-guess presentation scripts
@@ -87,7 +89,7 @@ later).
 ## Task instructions screen
 
 `motor_task.m`, `checkerboard_1cond_task.m`, `checkerboard_2cond_task.m`,
-`checkerboard_3cond_task.m`, and `blackjack_task.m` each show a brief
+`checkerboard_3cond_task.m`, `blackjack_task.m`, and `motor_guessing_task.m` each show a brief
 task-instructions screen — what the
 task is and what the subject's
 goal is — right after the window opens, **before** the "Waiting for scanner
@@ -260,7 +262,7 @@ once, and pass whatever it prints via `'TriggerKey'` / `'ResponseKeys'`.
 
 Once that passes, you're ready to run `motor_task.m` / `blackjack_task.m` /
 `checkerboard_1cond_task.m` / `checkerboard_2cond_task.m` /
-`checkerboard_3cond_task.m` below.
+`checkerboard_3cond_task.m` / `motor_guessing_task.m` below.
 
 ## Running
 
@@ -270,9 +272,10 @@ blackjack_task
 checkerboard_1cond_task
 checkerboard_2cond_task
 checkerboard_3cond_task
+motor_guessing_task
 ```
 
-All five:
+All six:
 - **Show a task-instructions screen first** — a brief description of the
   task and the subject's goal, dismissed with button 1 or 2 (or Escape to
   abort before the run even starts). See "Task instructions screen" below.
@@ -354,6 +357,15 @@ about how a task runs changes.
 squeezing blocks; plain fixation (`+`) during rest. Matches
 `taskActivation.py`'s `glmCondA=left_hand` / `glmCondB=right_hand`
 contrast when the toml is pointed at `GenericMotorLR_events.tsv`.
+
+**`motor_guessing_task.m`** — a secret-hand movement game. The participant silently
+picks a hand (the instructions tell them NOT to tell the experimenter) and, whenever a bold green "MOVE" cue is up, moves that same hand (squeezes it into a fist and relaxes it, repeatedly, like a stress ball); plain fixation (`+`) means relax. The cue never
+names a hand, and nothing in the script or its timing log records which one was used, so the
+experimenter stays blind. Analyzed live as ONE condition (`glmCondA=move`, vs the
+implicit rest baseline) — not a left-vs-right contrast, since the hand isn't known — and
+at the end the group guesses the hand from the map's laterality: a hand drives the
+OPPOSITE motor cortex (right-hemisphere activation = left hand). It's optional — just
+leave it out of a `run_battery` list (or run it last).
 
 **`blackjack_task.m`** — each 3.0s trial deals two cards face-up, with a
 value that fits the trial's own pre-scripted outcome (see
@@ -489,8 +501,8 @@ unchanged. Two things the normal path has that this one doesn't:
   window instead of one per task (see "Running several tasks in one session"
   above).
 - `motor_task.m`, `blackjack_task.m`, `checkerboard_1cond_task.m`,
-  `checkerboard_2cond_task.m`, `checkerboard_3cond_task.m` — the five task
-  scripts described above.
+  `checkerboard_2cond_task.m`, `checkerboard_3cond_task.m`, `motor_guessing_task.m` —
+  the six task scripts described above.
 - `test_ptb_install.m` — standalone smoke test (see "Install and test
   Psychtoolbox" above); also the fastest way to discover your trigger/
   button box's real PTB key names.
@@ -506,7 +518,7 @@ working MATLAB/PTB experiment script from this lab (confirming the KbQueue
 response pattern, screen-size/display-selection conventions, and clean-exit
 structure above), and checked for structural/syntax correctness, but they
 have **not** been run end-to-end in MATLAB (`blackjack_task.m`,
-`checkerboard_2cond_task.m`, and `checkerboard_3cond_task.m` included — no
+`checkerboard_2cond_task.m`, `checkerboard_3cond_task.m`, and `motor_guessing_task.m` included — no
 Octave/MATLAB was available to execute any of them in this environment;
 their underlying designs were instead validated indirectly, by confirming
 `Blackjack_events.tsv`/`gambling.toml`, `Checkerboard3Cond_events.tsv`/

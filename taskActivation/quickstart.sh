@@ -13,6 +13,7 @@
 #   ./quickstart.sh checkerboard_3cond  # checkerboard CENTER vs LEFT vs RIGHT (conf/checkerboard_3cond.toml)
 #   ./quickstart.sh checkerboard_2cond  # checkerboard LEFT vs RIGHT, no CENTER (conf/checkerboard_2cond.toml)
 #   ./quickstart.sh gambling            # blackjack WIN vs LOSE (conf/gambling.toml)
+#   ./quickstart.sh motor_guessing      # secret-hand movement, group guesses the hand (conf/motor_guessing.toml)
 #   ./quickstart.sh motor --run 2       # same, but run number 2 instead of the toml's runNum
 #   ./quickstart.sh --run 2             # default config, run number 2 (task name optional)
 #   ./quickstart.sh motor --plot-every-frame --skip-motion-correction
@@ -91,9 +92,9 @@ done
 
 if [ -n "$TASK" ]; then
     case "$TASK" in
-        motor|checkerboard_1cond|checkerboard_2cond|checkerboard_3cond|gambling) ;;
+        motor|checkerboard_1cond|checkerboard_2cond|checkerboard_3cond|gambling|motor_guessing) ;;
         *)
-            echo "Unknown task: '$TASK' (expected motor, checkerboard_1cond, checkerboard_2cond, checkerboard_3cond, or gambling)" >&2
+            echo "Unknown task: '$TASK' (expected motor, checkerboard_1cond, checkerboard_2cond, checkerboard_3cond, gambling, or motor_guessing)" >&2
             echo "Run with no task argument to use the default conf/taskActivation.toml instead." >&2
             exit 1
             ;;

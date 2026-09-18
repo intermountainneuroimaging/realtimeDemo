@@ -49,6 +49,7 @@ OUT_DIR = os.path.join(PROJECT_ROOT, 'templates')
 PANELS = {
     'motor': [('rest', 'rest (fixation)'), ('left_hand', 'left_hand'),
               ('right_hand', 'right_hand')],
+    'motor_guessing': [('rest', 'rest (fixation)'), ('move', 'move')],
     'checkerboard_1cond': [('rest', 'rest (fixation)'), ('checkerboard', 'checkerboard')],
     'checkerboard_2cond': [('rest', 'rest (fixation)'), ('left', 'left'), ('right', 'right')],
     'checkerboard_3cond': [('rest', 'rest (fixation)'), ('center', 'center'),

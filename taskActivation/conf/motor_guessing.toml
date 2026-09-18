@@ -1,0 +1,98 @@
+##### Configuration file: motor_guessing (secret-hand movement -- guess the hand) #####
+#
+# Real-time, registration-free motor mapping for the "guess the hand" game,
+# streaming DICOMs from a real (or mock) scanner via dicomDir/. Pairs with
+# stimuli_ptb/motor_guessing_task.m (Psychtoolbox), stimuli/motor_guessing_task.py
+# (PsychoPy), or study_design/MotorGuessing_events.tsv presented by any other
+# means: the participant SECRETLY picks a hand and, whenever MOVE is on
+# screen, moves that same hand (squeezes it into a fist and relaxes it, repeatedly) (5
+# blocks of 30s separated by 20s rest, after a 10s baseline, ending on a 10s
+# rest; 250s total -- the same length as motor.toml, so the two swap freely). The
+# experimenter is NOT told which hand -- the group guesses it at the end from
+# which motor cortex lights up (a hand drives the OPPOSITE hemisphere).
+#
+# Run: python run_task.py motor_guessing   (see ../run_task.py / ../quickstart.sh motor_guessing)
+
+title = "Real-Time fMRI Task Activation (secret hand movement -- guess the hand)"
+
+# ---- generic real-time task-activation demo ----
+
+taskName = "MotorGuessing"
+
+# events file (shipped) used to build the per-volume design at runtime.
+eventsFile = "MotorGuessing_events.tsv"
+
+# MOVE vs rest: glmCondB is deliberately empty here. Rest in this design
+# is the 'rest' trial_type, which is auto-detected as the GLM's IMPLICIT
+# baseline (see is_rest_type() in utils/rt_analysis.py) rather than a named
+# regressor of its own -- so it can't be passed as glmCondB directly. With
+# glmCondB empty, taskActivation.py plots the glmCondA beta weight instead
+# of a condA-condB contrast (see taskActivation.py's glmCondB comment) --
+# which for a move/rest design like this one IS the movement-vs-rest
+# map. Deliberately NOT a left-vs-right contrast: the hand is secret, so the
+# design has one 'move' condition and the LATERALITY of the resulting
+# map (right motor cortex = left hand, left = right) is what gets guessed.
+#
+# Not configured here (fixed in taskActivation.py -- not deployment-specific):
+# TR is always inferred from the first real DICOM's RepetitionTime; hrf_delay
+# is derived from that TR; nVols falls back to an events-file estimate if the
+# stream can't report its own length; the BIDS 'subject' tag is bookkeeping
+# only. See the AUTO_TR_TIMEOUT / HRF_DELAY_SECONDS / NVOLS_FALLBACK_PADDING /
+# SUBJECT_NUM constants near the top of taskActivation.py.
+
+# ---- scanner (DICOM) streaming ----
+dicomNamePattern = "demo_{RUN:06d}_{TR:06d}.dcm"   # demo_SeriesNumber_InstanceNumber (zero-padded)
+minExpectedDicomSize = 300000
+runNum = [1]
+dicomTimeout = 30.0        # seconds to wait for EACH volume's DICOM before raising
+                           # (rtCommon's own default is only 5s -- too short for a real
+                           # scanner's startup gap or an occasional slow volume)
+demoStep = 0               # TESTING ONLY: artificial per-volume delay (s) passed to rtCommon's
+                           # getIncremental. 0 = no artificial delay (deliver/plot as soon as each
+                           # DICOM is there). Never sets TR -- TR always comes from the DICOM
+                           # header (stamped by the real scanner, or by mock_scanner.py from its
+                           # --tr / reference DICOM) and is never used for plot step size/timing,
+                           # regardless of this value. mock_scanner.py also reads this same key,
+                           # but only for its OWN write-pacing sleep between volumes -- it never
+                           # affects the TR it stamps into the DICOMs it writes. Set this to e.g.
+                           # 2 to pace both scripts like a live TR-paced scan for testing.
+
+# ---- analysis (registration-free) ----
+fwhm = 5                   # smoothing FWHM (mm)
+mapThreshPct = 0.5         # %-signal-change threshold for the per-frame activation overlay
+contrastThresh = 2.0       # GLM map threshold (z units when glmZscore=true)
+driftOrder = 1             # polynomial drift terms in the GLM (per-run)
+glmCondA = "move"          # GLM condA beta weight (movement vs implicit rest baseline)
+glmCondB = ""              # empty -- see the MOVE-vs-rest note above
+glmZscore = true           # z-score the GLM map across voxels
+restTypes = []             # trial_types to treat as implicit baseline; [] = auto-detect (rest/fixation/...)
+zCuts = []                 # fixed axial slice positions in mm, e.g. [-20,-5,10,25,40,55]; [] = auto
+                           # ([] also auto-picks the slice COUNT, fixed at 6 in taskActivation.py)
+baselineFrames = -1        # -1 = auto: use all frames before the first event as baseline
+maskPercentile = 98        # UNUSED (kept so old configs still load) -- 'threshold' mode now cuts
+                           # via Otsu's method on the image's own histogram, not a percentile
+maskMethod = "bet"          # 'bet' (FSL skull-strip; removes skull/neck) | 'epi' | 'threshold'
+maskFrac = 0.35             # BET fractional-intensity threshold (lower = larger brain)
+maskFraction = 0.12        # multiplier on the Otsu cut for 'threshold' mode: 0.12 (this default)
+                           # = neutral/1x Otsu; below loosens it, above tightens it
+
+# ---- realtime display ----
+liveEveryTR = 1            # write a live update every N volumes
+liveDirName = "live"       # subfolder of rt-cloud/outDir/ the viewer watches
+# saveGif is CLI-only now (default off) -- pass taskActivation.py's own
+# --save-gif (or quickstart.sh's --save-gif, which forwards it) to assemble
+# every saved frame into a replay-able outDir/live/activation_run<N>.gif at
+# end of run; not a toml setting anymore.
+gifFps = 8                 # GIF playback speed (frames/sec) -- only relevant if --save-gif is passed
+
+# ---- web Data Plots tab (ROI %SC, single condition -- no A-minus-B here) ----
+plotTitle = 'Move response (ROI % signal change)'
+plotXLabel = 'volume #'
+plotYLabel = 'ROI % signal change'
+plotXRangeLow = 0
+plotXRangeHigh = 130       # rough (250s design / ~TR=2s); the analysis itself uses the
+                           # real inferred TR regardless -- this only sizes the web widget
+plotYRangeLow = -2
+plotYRangeHigh = 4
+plotAutoRangeX = false
+plotAutoRangeY = true

@@ -53,6 +53,7 @@ TASKS = {
     'checkerboard_3cond': ('checkerboard_3cond.toml', 'checkerboard CENTER vs LEFT vs RIGHT (3-way)'),
     'checkerboard_2cond': ('checkerboard_2cond.toml', 'checkerboard LEFT vs RIGHT (no CENTER, shorter run)'),
     'gambling':        ('gambling.toml',         'blackjack WIN vs LOSE (tie as covariate)'),
+    'motor_guessing':  ('motor_guessing.toml',   'secret-hand movement (group guesses the hand)'),
 }
 
 # task -> 5 axial slice positions (mm), hard-coded to where each task's
@@ -69,6 +70,7 @@ Z_CUTS = {
     'checkerboard_3cond': '-36,-22.75,-9.5,3.75,17',
     'checkerboard_2cond': '-36,-22.75,-9.5,3.75,17',
     'gambling':        '-10,-3,5,13,20',
+    'motor_guessing':  '0,16.25,32.5,48.75,65',   # motor cortex, same levels as motor
 }
 
 

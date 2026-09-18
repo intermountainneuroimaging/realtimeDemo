@@ -1,0 +1,12 @@
+onset	duration	trial_type
+0	10	rest
+10	30	move
+40	20	rest
+60	30	move
+90	20	rest
+110	30	move
+140	20	rest
+160	30	move
+190	20	rest
+210	30	move
+240	10	rest

@@ -4,7 +4,7 @@ derived from a real MAGNETOM Prisma Fit BOLD acquisition (88x88x56, TR=1000ms).
 mock_scanner.py uses it as the geometry/timing reference and packing container
 for synthetic volumes -- see --reference-dicom to point at a different one.
 
-current_<task>.png (one per task: motor, checkerboard_1cond/2cond/3cond, gambling)
+current_<task>.png (one per task: motor, checkerboard_1cond/2cond/3cond, gambling, motor_guessing)
 are pre-data "template" versions of the live current.png, for display before any
 real data has arrived: a brain underlay (MNI152, no overlay) at the task's own
 axial slices, and one row per GLM condition showing ONLY the event timing (shaded

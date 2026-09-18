@@ -8,7 +8,8 @@ function run_battery(tasks, varargin)
 %   run in order, each entry itself a 2-element cell {fnHandle, argsCell}:
 %     fnHandle  - a stimuli_ptb task function handle, e.g. @motor_task,
 %                 @checkerboard_1cond_task, @checkerboard_2cond_task,
-%                 @checkerboard_3cond_task, @blackjack_task -- any function
+%                 @checkerboard_3cond_task, @blackjack_task,
+%                 @motor_guessing_task -- any function
 %                 that accepts a 'Win' name-value option (see motor_task.m's
 %                 own help for why that option exists).
 %     argsCell  - cell array of that task's OWN name-value args (e.g.
@@ -31,7 +32,8 @@ function run_battery(tasks, varargin)
 %                      (see display_name() at the bottom of this file:
 %                      'Visual Perception Task' for the checkerboard tasks,
 %                      'Voluntary Movement Task' for motor_task, 'Blackjack
-%                      Game' for blackjack_task) (default: 'Up next: %s
+%                      Game' for blackjack_task, 'Hand Guessing Game' for
+%                      motor_guessing_task) (default: 'Up next: %s
 %                      (i of N)\n\nExperimenter: press SPACE to continue.').
 %
 %   Shows the staging screen BEFORE every task, including the first -- so
@@ -121,6 +123,8 @@ function name = display_name(fnName)
             name = 'Voluntary Movement Task';
         case 'blackjack_task'
             name = 'Blackjack Game';
+        case 'motor_guessing_task'
+            name = 'Hand Guessing Game';
         otherwise
             name = fnName;
     end
