@@ -63,14 +63,15 @@ TASKS = {
 # posterior/inferior (low z), same for checkerboard_3cond's 3 positions (and
 # checkerboard_2cond's 2). gambling targets subcortical reward regions
 # (striatum), so its 5 cuts run from -10 to 20 (linear spacing is 7.5 mm,
-# rounded to whole mm: -10, -2.5, 5, 12.5, 20 -> -10, -3, 5, 13, 20).
+# rounded to whole mm: -10, -2.5, 5, 12.5, 20 -> -10, -3, 5, 13, 20). motor and
+# motor_guessing (same cortex, kept identical) run from 25 to 65 (10 mm apart).
 Z_CUTS = {
-    'motor':           '0,16.25,32.5,48.75,65',
+    'motor':           '25,35,45,55,65',
     'checkerboard_1cond': '-36,-22.75,-9.5,3.75,17',
     'checkerboard_3cond': '-36,-22.75,-9.5,3.75,17',
     'checkerboard_2cond': '-36,-22.75,-9.5,3.75,17',
     'gambling':        '-10,-3,5,13,20',
-    'motor_guessing':  '0,16.25,32.5,48.75,65',   # motor cortex, same levels as motor
+    'motor_guessing':  '25,35,45,55,65',   # motor cortex, same levels as motor
 }
 
 
