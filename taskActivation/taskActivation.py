@@ -230,6 +230,14 @@ print(f"Live viewer: open {viewerPath} in a browser for an auto-refreshing "
       f"view of current.png (updates every 0.5s).")
 print(f"Motion viewer: open {motionViewerPath} for the same, watching motion.png "
       f"on its own -- separate pages so either can be watched independently.")
+# Show this task's pre-data template (templates/current_<config name>.png, made by
+# utils/make_templates.py) as current.png until the first real frame replaces it.
+# No template for this config (e.g. the default taskActivation.toml) -> just skip.
+_templatePng = os.path.join(currPath, 'templates',
+                            f"current_{os.path.splitext(os.path.basename(args.config))[0]}.png")
+if mrt.install_template_png(liveDir, _templatePng):
+    print(f"Template current.png installed ({os.path.basename(_templatePng)}) -- "
+          f"replaced by the real activation view once data arrive.")
 eventsPath = os.path.join(currPath, 'study_design', str(cfg.eventsFile))
 
 print(f"\n----{cfg.title}  [task={taskName}]  A={condAName} B={condBName}  run={curRun}----\n")

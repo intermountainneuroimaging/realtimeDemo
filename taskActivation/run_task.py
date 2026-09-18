@@ -60,13 +60,15 @@ TASKS = {
 # forwarded to taskActivation.py's --z-cuts, overriding the toml's zCuts for
 # that run. Motor cortex sits near the vertex (high z); visual cortex is
 # posterior/inferior (low z), same for checkerboard_3cond's 3 positions (and
-# checkerboard_2cond's 2). gambling has no fixed region picked yet, so
-# it's absent here and keeps using its toml's own zCuts (currently auto).
+# checkerboard_2cond's 2). gambling targets subcortical reward regions
+# (striatum), so its 5 cuts run from -10 to 20 (linear spacing is 7.5 mm,
+# rounded to whole mm: -10, -2.5, 5, 12.5, 20 -> -10, -3, 5, 13, 20).
 Z_CUTS = {
     'motor':           '0,16.25,32.5,48.75,65',
     'checkerboard_1cond': '-36,-22.75,-9.5,3.75,17',
     'checkerboard_3cond': '-36,-22.75,-9.5,3.75,17',
     'checkerboard_2cond': '-36,-22.75,-9.5,3.75,17',
+    'gambling':        '-10,-3,5,13,20',
 }
 
 

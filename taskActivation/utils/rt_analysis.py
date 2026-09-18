@@ -561,6 +561,60 @@ def _brain_z_cuts(ref3d, affine, n_slices, min_frac=0.02):
     return zs
 
 
+def _draw_trace_rows(fig, gs, n_brain, traces, full_xlim=None):
+    """Draw one line-plot row per entry of `traces` into gridspec rows
+    n_brain, n_brain+1, ... -- shared by nilearn_stat_png(),
+    nilearn_stat_png_3way() and template_png(), so all three look identical.
+
+    Each entry: 't' (times), 'title', optional 'measured' (the white measured
+    %-signal-change line -- omitted for the pre-data template), optional
+    'predicted' (the dashed HRF-predicted line, in the entry's 'color'),
+    'blocks' [(start, end), ...] to shade, optional 'ylabel'/'ylim'.
+
+    All traces share one underlying time axis, but each trace's OWN stimulus
+    blocks (axvspan, different onsets per condition) can otherwise pull
+    matplotlib's per-axes autoscale to a different x-range -- so every row is
+    locked to the same explicit xlim, keeping the rows visually lined up.
+    `full_xlim`, if given, fixes it to the whole expected run instead of just
+    the data seen so far (so the axis is stable frame to frame, not just
+    consistent between rows)."""
+    t_xlim = full_xlim
+    if t_xlim is None and traces:
+        t_lo = min(float(np.asarray(tr['t']).min()) for tr in traces)
+        t_hi = max(float(np.asarray(tr['t']).max()) for tr in traces)
+        t_xlim = (t_lo, t_hi)
+    for i, tr in enumerate(traces):
+        ax = fig.add_subplot(gs[n_brain + i], facecolor='black')
+        t = np.asarray(tr['t'])
+        for (b0, b1) in tr.get('blocks', []):
+            # a faint fill alone (the old alpha=0.12) all but disappears on a
+            # washed-out/low-contrast monitor -- add solid dotted boundary
+            # lines at each block edge (full alpha, not the fill's) so the
+            # block extent stays legible even when the tint itself doesn't
+            blockColor = tr.get('color', 'tab:red')
+            ax.axvspan(b0, b1, color=blockColor, alpha=0.22)
+            ax.axvline(b0, color=blockColor, lw=0.9, ls=':', alpha=0.9)
+            ax.axvline(b1, color=blockColor, lw=0.9, ls=':', alpha=0.9)
+        if tr.get('measured') is not None:
+            ax.plot(t, tr['measured'], color='white', lw=1.4, label='measured %\u0394S')
+        # 'predicted' is optional -- absent for the simple measured-only
+        # trace shown before the GLM fit is estimable (see taskActivation.py)
+        if tr.get('predicted') is not None:
+            ax.plot(t, tr['predicted'], color=tr.get('color', 'tab:red'), lw=1.8,
+                    ls='--', label='HRF-predicted')
+        ax.axhline(0, color='gray', lw=0.5)
+        ax.set_xlim(*t_xlim)
+        if tr.get('ylim') is not None:
+            ax.set_ylim(*tr['ylim'])
+        ax.set_title(tr['title'], color='white', fontsize=9)
+        ax.set_xlabel('time (s)', color='white')
+        ax.set_ylabel(tr.get('ylabel', '% \u0394S'), color='white')
+        ax.tick_params(colors='white', labelsize=7)
+        for sp in ax.spines.values():
+            sp.set_color('white')
+        ax.legend(loc='upper right', fontsize=7, facecolor='black', labelcolor='white')
+
+
 def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
                      peak=None, condAName='A', condBName='B', caption=None, cmap='RdBu_r',
                      contrast3d=None, contrast_thresh=2.0,
@@ -643,45 +697,9 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
         fig.text(bbox.x0 + 0.006, bbox.y1 - 0.015, f"frame {int(frame)}",
                  color='yellow', fontsize=16, fontweight='bold', va='top', ha='left',
                  bbox=dict(facecolor='black', alpha=0.7, pad=3, edgecolor='none'))
-    # end-of-run: measured vs HRF-predicted timecourse at each condition's peak voxel.
-    # All traces share the same underlying time axis (one glm_voxel_traces call,
-    # same X/Y), but each trace's OWN stimulus blocks (axvspan, different onsets
-    # per condition) can otherwise pull matplotlib's per-axes autoscale to a
-    # different x-range -- lock every trace axes to the same explicit xlim so
-    # the two rows visually line up. `full_xlim`, if given, fixes it to the
-    # whole expected run instead of just the data seen so far (so the axis is
-    # stable frame to frame, not just consistent between the two trace rows).
-    t_xlim = full_xlim
-    if t_xlim is None and traces:
-        t_lo = min(float(np.asarray(tr['t']).min()) for tr in traces)
-        t_hi = max(float(np.asarray(tr['t']).max()) for tr in traces)
-        t_xlim = (t_lo, t_hi)
-    for i, tr in enumerate(traces):
-        ax = fig.add_subplot(gs[n_brain + i], facecolor='black')
-        t = np.asarray(tr['t'])
-        for (b0, b1) in tr.get('blocks', []):
-            # a faint fill alone (the old alpha=0.12) all but disappears on a
-            # washed-out/low-contrast monitor -- add solid dotted boundary
-            # lines at each block edge (full alpha, not the fill's) so the
-            # block extent stays legible even when the tint itself doesn't
-            blockColor = tr.get('color', 'tab:red')
-            ax.axvspan(b0, b1, color=blockColor, alpha=0.22)
-            ax.axvline(b0, color=blockColor, lw=0.9, ls=':', alpha=0.9)
-            ax.axvline(b1, color=blockColor, lw=0.9, ls=':', alpha=0.9)
-        ax.plot(t, tr['measured'], color='white', lw=1.4, label='measured %\u0394S')
-        # 'predicted' is optional -- absent for the simple measured-only
-        # trace shown before the GLM fit is estimable (see taskActivation.py)
-        if tr.get('predicted') is not None:
-            ax.plot(t, tr['predicted'], color=tr.get('color', 'tab:red'), lw=1.8,
-                    ls='--', label='HRF-predicted')
-        ax.axhline(0, color='gray', lw=0.5)
-        ax.set_xlim(*t_xlim)
-        ax.set_title(tr['title'], color='white', fontsize=9)
-        ax.set_xlabel('time (s)', color='white'); ax.set_ylabel('% \u0394S', color='white')
-        ax.tick_params(colors='white', labelsize=7)
-        for s in ax.spines.values():
-            s.set_color('white')
-        ax.legend(loc='upper right', fontsize=7, facecolor='black', labelcolor='white')
+    # measured vs HRF-predicted timecourse at each condition's peak voxel -- see
+    # _draw_trace_rows() for the shared x-axis / block-shading details.
+    _draw_trace_rows(fig, gs, n_brain, traces, full_xlim)
     _atomic_write(out_png, lambda tmp: fig.savefig(tmp, dpi=110, facecolor='black'))
     plt.close(fig)
     return True
@@ -743,35 +761,96 @@ def nilearn_stat_png_3way(out_png, ref3d, affine, title, maps, labels, colors,
         fig.text(bbox.x0 + 0.006, bbox.y1 - 0.015, f"frame {int(frame)}",
                  color='yellow', fontsize=16, fontweight='bold', va='top', ha='left',
                  bbox=dict(facecolor='black', alpha=0.7, pad=3, edgecolor='none'))
-    t_xlim = full_xlim
-    if t_xlim is None and traces:
-        t_lo = min(float(np.asarray(tr['t']).min()) for tr in traces)
-        t_hi = max(float(np.asarray(tr['t']).max()) for tr in traces)
-        t_xlim = (t_lo, t_hi)
-    for i, tr in enumerate(traces):
-        ax = fig.add_subplot(gs[n_brain + i], facecolor='black')
-        t = np.asarray(tr['t'])
-        for (b0, b1) in tr.get('blocks', []):
-            # a faint fill alone (the old alpha=0.12) all but disappears on a
-            # washed-out/low-contrast monitor -- add solid dotted boundary
-            # lines at each block edge (full alpha, not the fill's) so the
-            # block extent stays legible even when the tint itself doesn't
-            blockColor = tr.get('color', 'tab:red')
-            ax.axvspan(b0, b1, color=blockColor, alpha=0.22)
-            ax.axvline(b0, color=blockColor, lw=0.9, ls=':', alpha=0.9)
-            ax.axvline(b1, color=blockColor, lw=0.9, ls=':', alpha=0.9)
-        ax.plot(t, tr['measured'], color='white', lw=1.4, label='measured %ΔS')
-        if tr.get('predicted') is not None:
-            ax.plot(t, tr['predicted'], color=tr.get('color', 'tab:red'), lw=1.8,
-                    ls='--', label='HRF-predicted')
-        ax.axhline(0, color='gray', lw=0.5)
-        ax.set_xlim(*t_xlim)
-        ax.set_title(tr['title'], color='white', fontsize=9)
-        ax.set_xlabel('time (s)', color='white'); ax.set_ylabel('% ΔS', color='white')
-        ax.tick_params(colors='white', labelsize=7)
-        for s in ax.spines.values():
-            s.set_color('white')
-        ax.legend(loc='upper right', fontsize=7, facecolor='black', labelcolor='white')
+    _draw_trace_rows(fig, gs, n_brain, traces, full_xlim)
+    _atomic_write(out_png, lambda tmp: fig.savefig(tmp, dpi=110, facecolor='black'))
+    plt.close(fig)
+    return True
+
+
+def template_png(out_png, ref3d, affine, traces, z_cuts, title, caption,
+                 stim_panels=None, stim_caption='Shown to the participant',
+                 badge='TEMPLATE -- waiting for data', subtitle=None, full_xlim=None,
+                 n_slices=6):
+    """The pre-data "template" version of current.png: same brain mosaic + trace
+    rows as nilearn_stat_png(), but with NO statistical overlay and NO measured
+    traces -- just the brain underlay (`ref3d`/`affine`; a generic MNI template
+    stands in until the run's own baseline exists), the event-timing block
+    shading, and the predicted HRF response (each `traces` entry carries
+    'predicted' but no 'measured'; see _draw_trace_rows()). Shown before any
+    real data arrives so the viewer isn't blank and the operator can see what
+    the run should look like.
+
+    `stim_panels` (optional) adds a strip of stimulus snapshots -- what the
+    participant actually sees -- to the top-right corner: a list of dicts
+    {'image': <png path or RGB array>, 'label': str, 'color': matplotlib color
+    (a panel's border/label; use the matching trace color to link a screen to
+    its shaded blocks)}. The strip lives in an extra band ABOVE the layout the
+    live figure uses, so the mosaic and trace rows themselves keep the live
+    figure's exact proportions. Returns False if nilearn is unavailable."""
+    try:
+        import nibabel as nib
+        from nilearn import plotting
+        import matplotlib.pyplot as plt
+        import matplotlib.image as mpimg
+        import textwrap
+    except Exception:
+        return False
+    n_brain = 1
+    live_h = 2.9 * n_brain + 2.0 * len(traces)   # nilearn_stat_png()'s own figure height
+    hdr_h = 1.2                                   # extra band above it: badge/title + stimulus strip
+    fig_w, fig_h = 13.0, live_h + hdr_h
+    fig = plt.figure(figsize=(fig_w, fig_h), facecolor='black')
+    # matplotlib's default 0.12 top / 0.11 bottom margins were of the LIVE height;
+    # keep them as the same absolute inches so the brain/trace block matches live.
+    gs = fig.add_gridspec(n_brain + len(traces), 1,
+                          height_ratios=[3.0] * n_brain + [1.5] * len(traces), hspace=0.45,
+                          top=1 - (0.12 * live_h + hdr_h) / fig_h, bottom=0.11 * live_h / fig_h)
+    ax_top = fig.add_subplot(gs[0])
+    cuts = list(z_cuts) if z_cuts is not None and len(z_cuts) else n_slices
+    bg = nib.Nifti1Image(np.asarray(ref3d, np.float32), affine)
+    plotting.plot_anat(bg, display_mode='z', cut_coords=cuts, colorbar=False,
+                       black_bg=True, figure=fig, axes=ax_top)
+    ax_top.set_title(caption, color='white', fontsize=11, fontweight='bold', y=-0.22)
+    _draw_trace_rows(fig, gs, n_brain, traces, full_xlim)
+
+    # ---- header band (figure coordinates, in inches from the top-left) ----
+    def fx(inches):
+        return inches / fig_w
+
+    def fy(inches_from_top):
+        return 1 - inches_from_top / fig_h
+
+    left = 0.26
+    fig.text(fx(left), fy(0.12), badge, color='yellow', fontsize=14, fontweight='bold',
+             va='top', ha='left')
+    fig.text(fx(left), fy(0.50), '\n'.join(textwrap.wrap(title, 42)), color='white',
+             fontsize=10, va='top', ha='left')
+    if subtitle:
+        fig.text(fx(left), fy(0.95), '\n'.join(textwrap.wrap(subtitle, 60)), color='#bbbbbb',
+                 fontsize=8.5, va='top', ha='left')
+
+    panels = stim_panels or []
+    if panels:
+        n, gap = len(panels), 0.12
+        right_edge = fig_w - 0.26
+        pw = min(2.2, (8.3 - gap * (n - 1)) / n)   # thumbnail width, inches (16:9)
+        ph = pw * 9.0 / 16.0
+        x0 = right_edge - (n * pw + (n - 1) * gap)
+        top = 0.40
+        fig.text(fx(right_edge), fy(0.12), stim_caption, color='#bbbbbb', fontsize=9,
+                 va='top', ha='right')
+        for i, panel in enumerate(panels):
+            x = x0 + i * (pw + gap)
+            ax = fig.add_axes([fx(x), fy(top + ph), fx(pw), ph / fig_h])
+            img = panel['image']
+            ax.imshow(mpimg.imread(img) if isinstance(img, str) else img)
+            ax.set_xticks([]); ax.set_yticks([])
+            color = panel.get('color', 'white')
+            for sp in ax.spines.values():
+                sp.set_color(color); sp.set_linewidth(2.2)
+            fig.text(fx(x + pw / 2), fy(top + ph + 0.06), panel.get('label', ''), color=color,
+                     fontsize=8, va='top', ha='center')
+
     _atomic_write(out_png, lambda tmp: fig.savefig(tmp, dpi=110, facecolor='black'))
     plt.close(fig)
     return True
@@ -893,6 +972,27 @@ def write_live_viewer_motion_html(liveDir):
             f.write(_LIVE_VIEWER_MOTION_HTML)
     _atomic_write(out, _w)
     return out
+
+
+def install_template_png(liveDir, template_path):
+    """Copy a pre-data template (see template_png() / make_templates.py) to
+    liveDir/current.png, so the live viewer shows the task's expected design
+    instead of a blank page until the first real frame replaces it (every
+    real render writes current.png atomically, so the swap is seamless).
+    Also overwrites a stale current.png left in liveDir by an earlier run.
+    A missing template, or a failed copy, just returns False -- the
+    placeholder is a nicety and must never stop a run."""
+    import shutil
+    if not template_path or not os.path.exists(template_path):
+        return False
+    try:
+        os.makedirs(liveDir, exist_ok=True)
+        _atomic_write(os.path.join(liveDir, 'current.png'),
+                      lambda tmp: shutil.copyfile(template_path, tmp))
+    except Exception as e:
+        print(f"[live] couldn't install the template current.png: {e}")
+        return False
+    return True
 
 
 def write_live_update(liveDir, run, vol, runLabel, zmap3d, ref3d, affine, peak, thresh,
