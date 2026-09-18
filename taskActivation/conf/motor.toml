@@ -1,15 +1,15 @@
-##### Configuration file: motor (LEFT vs RIGHT finger tapping) #####
+##### Configuration file: motor (LEFT vs RIGHT hand squeezing) #####
 #
-# Real-time, registration-free LEFT/RIGHT finger-tapping motor mapping,
+# Real-time, registration-free LEFT/RIGHT hand-squeezing motor mapping,
 # streaming DICOMs from a real (or mock) scanner via dicomDir/. Pairs with
 # stimuli_ptb/motor_task.m (Psychtoolbox), stimuli/generic_motor_task.py
 # (PsychoPy), or study_design/GenericMotorLR_events.tsv presented by any
-# other means: 30s LEFT FINGER / RIGHT FINGER tapping blocks separated by
+# other means: 30s SQUEEZE LEFT HAND / SQUEEZE RIGHT HAND blocks separated by
 # 10s REST blocks (3 reps each + a trailing rest block, 250s total).
 #
 # Run: python run_task.py motor   (see ../run_task.py / ../quickstart.sh motor)
 
-title = "Real-Time fMRI Task Activation (LEFT vs RIGHT finger tapping)"
+title = "Real-Time fMRI Task Activation (LEFT vs RIGHT hand squeezing)"
 
 # ---- generic real-time task-activation demo ----
 
@@ -18,8 +18,8 @@ taskName = "MotorLR"
 # events file (shipped) used to build the per-volume design at runtime.
 eventsFile = "GenericMotorLR_events.tsv"
 
-# condition display names. cond A = LEFT finger (-> right motor cortex),
-#                          cond B = RIGHT finger (-> left motor cortex)
+# condition display names. cond A = LEFT hand (-> right motor cortex),
+#                          cond B = RIGHT hand (-> left motor cortex)
 #
 # Not configured here (fixed in taskActivation.py -- not deployment-specific):
 # TR is always inferred from the first real DICOM's RepetitionTime; hrf_delay
@@ -50,8 +50,8 @@ fwhm = 5                   # smoothing FWHM (mm)
 mapThreshPct = 0.5         # %-signal-change threshold for the per-frame activation overlay
 contrastThresh = 2.0       # GLM map threshold (z units when glmZscore=true)
 driftOrder = 1             # polynomial drift terms in the GLM (per-run)
-glmCondA = "left_finger"   # GLM contrast condA-condB; also used as the display label
-glmCondB = "right_finger"  # set empty ("") to plot the condA beta weight instead
+glmCondA = "left_hand"   # GLM contrast condA-condB; also used as the display label
+glmCondB = "right_hand"  # set empty ("") to plot the condA beta weight instead
 glmZscore = true           # z-score the GLM map across voxels
 restTypes = []             # trial_types to treat as implicit baseline; [] = auto-detect (rest/fixation/...)
 zCuts = []                 # fixed axial slice positions in mm, e.g. [-20,-5,10,25,40,55]; [] = auto

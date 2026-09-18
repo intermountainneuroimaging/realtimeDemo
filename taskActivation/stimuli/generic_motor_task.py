@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """-----------------------------------------------------------------------------
 generic_motor_task.py -- simple PsychoPy presentation of this project's own
-LEFT/RIGHT finger-tapping design (study_design/GenericMotorLR_events.tsv,
+LEFT/RIGHT hand-squeezing design (study_design/GenericMotorLR_events.tsv,
 the same file taskActivation.py's live analysis reads via conf/motor.toml),
 so this project's motor task can be run end-to-end with a real (or
 self-triggered) task on the stimulus computer. The Psychtoolbox equivalent
 is stimuli_ptb/motor_task.m -- both present the exact same events.tsv.
 
-Blocks: 30s LEFT FINGER / RIGHT FINGER tapping blocks separated by 10s REST
+Blocks: 30s SQUEEZE LEFT HAND / SQUEEZE RIGHT HAND blocks (squeeze the hand into
+a fist and relax it repeatedly, like squeezing a stress ball) separated by 10s REST
 blocks (3 reps each + a trailing rest block, 250s total) -- exactly
-matching taskActivation.py's GLM design (glmCondA=left_finger,
-glmCondB=right_finger). Unlike the original 5-condition HCP dataset (now
+matching taskActivation.py's GLM design (glmCondA=left_hand,
+glmCondB=right_hand). Unlike the original 5-condition HCP dataset (now
 archived in obsolete/stimuli/hcp_motor_task.py), there are no "_cue"
 get-ready periods here -- rest between blocks
 doubles as the get-ready period.
@@ -32,9 +33,9 @@ import common
 HERE = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_EVENTS = os.path.join(common.PROJECT_ROOT, 'study_design', 'GenericMotorLR_events.tsv')
 
-FINGER_LABELS = {
-    'left_finger': 'LEFT\nFINGER',
-    'right_finger': 'RIGHT\nFINGER',
+CUE_LABELS = {
+    'left_hand': 'SQUEEZE\nLEFT HAND',
+    'right_hand': 'SQUEEZE\nRIGHT HAND',
 }
 
 
@@ -44,14 +45,14 @@ def build_stims(win):
     text/geometry each time."""
     from psychopy import visual
     stims = {}
-    for key, label in FINGER_LABELS.items():
+    for key, label in CUE_LABELS.items():
         stims[key] = visual.TextStim(win, text=label, color='lime', bold=True, height=0.14)
     fixation = visual.TextStim(win, text='+', color='white', height=0.1)
     return stims, fixation
 
 
 def main():
-    ap = argparse.ArgumentParser(description='Present the LEFT/RIGHT finger-tapping task (PsychoPy).')
+    ap = argparse.ArgumentParser(description='Present the LEFT/RIGHT hand-squeezing task (PsychoPy).')
     ap.add_argument('--events', default=DEFAULT_EVENTS, help='events.tsv to present')
     ap.add_argument('--trigger-key', default='5,t',
                     help="comma-separated key(s) that start the run (scanner sync pulse, "
@@ -81,11 +82,13 @@ def main():
         return stims.get(trial_type, fixation)
 
     instructions = (
-        "LEFT/RIGHT FINGER TAPPING TASK\n\n"
-        "When you see LEFT FINGER, repeatedly tap your left thumb and index finger "
-        "together. When you see RIGHT FINGER, do the same with your right thumb and "
-        "index finger. During the + fixation cross, relax and stay still.\n\n"
-        "Goal: keep tapping steadily for the whole block shown, using the correct hand.\n\n"
+        "LEFT/RIGHT HAND SQUEEZING TASK\n\n"
+        "When you see SQUEEZE LEFT HAND, squeeze your left hand into a fist, like you "
+        "are squeezing a stress ball, then relax it. Keep squeezing and relaxing "
+        "repeatedly for as long as the cue stays on the screen. When you see SQUEEZE "
+        "RIGHT HAND, do the same with your right hand. When you see the + fixation "
+        "cross, relax your hands and stay still.\n\n"
+        "Goal: squeeze and relax steadily for the whole block shown, using the correct hand.\n\n"
         "If you have any questions, ask the experimenter now. When you are "
         "comfortable, press any button to continue.")
     if common.show_instructions(win, instructions):

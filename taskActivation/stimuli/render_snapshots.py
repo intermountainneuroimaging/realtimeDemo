@@ -40,8 +40,8 @@ def snapshots_motor(win, shoot):
     import generic_motor_task
     stims, fixation = generic_motor_task.build_stims(win)
     fixation.draw(); shoot('motor', 'rest')
-    stims['left_finger'].draw(); shoot('motor', 'left_finger')
-    stims['right_finger'].draw(); shoot('motor', 'right_finger')
+    stims['left_hand'].draw(); shoot('motor', 'left_hand')
+    stims['right_hand'].draw(); shoot('motor', 'right_hand')
 
 
 def snapshots_checkerboard_1cond(win, shoot):

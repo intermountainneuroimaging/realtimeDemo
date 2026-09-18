@@ -125,9 +125,9 @@ def main():
     ap.add_argument('--duration', type=float, default=None,
                     help='total run length in seconds (default: end of the last event); '
                          'pass nVols*TR to also show trailing rest')
-    ap.add_argument('--flicker-hz', type=float, default=8.0,
+    ap.add_argument('--flicker-hz', type=float, default=2.0,
                     help='how many times per second the checkerboard changes state during a '
-                         'LEFT/RIGHT block (default 8): OFF (blank) -> ON (pattern A) -> OFF -> '
+                         'LEFT/RIGHT block (default 2): OFF (blank) -> ON (pattern A) -> OFF -> '
                          'ON (pattern B, the black<->white inverse of A) -> repeat, each state '
                          'lasting 1/flicker_hz -- same semantics as checkerboard_1cond_task.py')
     ap.add_argument('--windowed', action='store_true', help='windowed instead of fullscreen')

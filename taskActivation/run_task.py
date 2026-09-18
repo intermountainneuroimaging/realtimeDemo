@@ -48,7 +48,7 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 
 # name -> (config file, one-line description)
 TASKS = {
-    'motor':           ('motor.toml',           'LEFT vs RIGHT finger tapping'),
+    'motor':           ('motor.toml',           'LEFT vs RIGHT hand squeezing'),
     'checkerboard_1cond': ('checkerboard_1cond.toml', 'flickering checkerboard ON vs OFF'),
     'checkerboard_3cond': ('checkerboard_3cond.toml', 'checkerboard CENTER vs LEFT vs RIGHT (3-way)'),
     'checkerboard_2cond': ('checkerboard_2cond.toml', 'checkerboard LEFT vs RIGHT (no CENTER, shorter run)'),

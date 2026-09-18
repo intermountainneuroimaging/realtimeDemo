@@ -1,14 +1,15 @@
 function motor_task(varargin)
-%MOTOR_TASK Psychtoolbox presentation of a simple L/R-finger motor task.
+%MOTOR_TASK Psychtoolbox presentation of a simple L/R-hand squeezing task.
 %   MOTOR_TASK() shows a brief task-instructions screen (dismiss with 1/2,
 %   or Escape to abort), waits for the scanner trigger, then presents alternating
-%   30-second LEFT FINGER / RIGHT FINGER tapping blocks separated by 10s
+%   30-second SQUEEZE LEFT HAND / SQUEEZE RIGHT HAND blocks (squeeze the hand
+%   into a fist and relax it, repeatedly, like squeezing a stress ball) separated by 10s
 %   REST blocks (../study_design/GenericMotorLR_events.tsv: rest,
-%   left_finger, rest, right_finger, x3, + a trailing rest block -- 13
+%   left_hand, rest, right_hand, x3, + a trailing rest block -- 13
 %   blocks, 250s total). Matches this project's real-time GLM contrast
 %   convention: point
 %   taskActivation.toml's eventsFile at GenericMotorLR_events.tsv and set
-%   glmCondA='left_finger', glmCondB='right_finger' to analyze it live.
+%   glmCondA='left_hand', glmCondB='right_hand' to analyze it live.
 %
 %   Name-value options (all optional):
 %     'TriggerKey'    cellstr of trigger keys (default {'5','5%','t'} -- '5%'
@@ -76,7 +77,7 @@ function motor_task(varargin)
                          % closing it is the caller's job, not this task's
     end
 
-    labels = struct('left_finger', 'LEFT\nFINGER', 'right_finger', 'RIGHT\nFINGER');
+    labels = struct('left_hand', 'SQUEEZE\nLEFT HAND', 'right_hand', 'SQUEEZE\nRIGHT HAND');
 
     function stimFor(win, trialType, ~, ~)
         if isfield(labels, trialType)
@@ -86,11 +87,13 @@ function motor_task(varargin)
         end
     end
 
-    instructions = ['LEFT/RIGHT FINGER TAPPING TASK\n\n' ...
-        'When you see LEFT FINGER, repeatedly tap your left thumb and index finger ' ...
-        'together. When you see RIGHT FINGER, do the same with your right thumb and ' ...
-        'index finger. During the + fixation cross, relax and stay still.\n\n' ...
-        'Goal: keep tapping steadily for the whole block shown, using the correct hand.\n\n' ...
+    instructions = ['LEFT/RIGHT HAND SQUEEZING TASK\n\n' ...
+        'When you see SQUEEZE LEFT HAND, squeeze your left hand into a fist, like you ' ...
+        'are squeezing a stress ball, then relax it. Keep squeezing and relaxing ' ...
+        'repeatedly for as long as the cue stays on the screen. When you see SQUEEZE ' ...
+        'RIGHT HAND, do the same with your right hand. When you see the + fixation ' ...
+        'cross, relax your hands and stay still.\n\n' ...
+        'Goal: squeeze and relax steadily for the whole block shown, using the correct hand.\n\n' ...
         'If you have any questions, ask the experimenter now. When you are ' ...
         'comfortable, press any button to continue.'];
     if ptb_show_instructions(win, instructions)

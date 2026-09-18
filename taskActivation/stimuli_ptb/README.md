@@ -13,7 +13,7 @@ files so the real-time analysis assumes exactly what's actually presented.
 
 | Script | Events file | Design |
 |---|---|---|
-| `motor_task.m` | `../study_design/GenericMotorLR_events.tsv` | 30s LEFT FINGER / RIGHT FINGER tapping blocks separated by 10s REST blocks (3 reps each + trailing rest, 13 blocks / 250s) |
+| `motor_task.m` | `../study_design/GenericMotorLR_events.tsv` | 30s SQUEEZE LEFT HAND / SQUEEZE RIGHT HAND blocks (squeeze into a fist and relax, repeatedly) separated by 10s REST blocks (3 reps each + trailing rest, 13 blocks / 250s) |
 | `blackjack_task.m` | `../study_design/Blackjack_events.tsv` | this project's own two-card blackjack design: hit(1) or stay(2), any time in a 2.0s decision window, immediately reveals a pre-scripted win / lose / tie outcome (3.0s/trial), separated by a jittered 1.0-3.0s inter-trial interval -- 58 trials (24 win / 24 lose / 10 tie), ~5 minutes total |
 | `checkerboard_1cond_task.m` | `../study_design/Checkerboard1Cond_events.tsv` | 20s ON/OFF blocks: full-contrast checkerboard (genuine OFF/A/OFF/B flicker, not two patterns swapped with no blank) vs fixation (6 reps + trailing rest, 13 blocks / 260s) |
 | `checkerboard_2cond_task.m` | `../study_design/Checkerboard2Cond_events.tsv` | the LEFT/RIGHT half of `checkerboard_3cond_task.m` with CENTER dropped entirely -- an ordinary 2-condition design, not the 3-way one-vs-rest -- 12s blocks, 4 reps of each + rest between every block, 204s total |
@@ -31,7 +31,7 @@ matching `eventsFile` and GLM contrast already set:
 
 | Task | `conf/*.toml` | `eventsFile` | `glmCondA` | `glmCondB` | `glmCondC` |
 |---|---|---|---|---|---|
-| Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_finger` | `right_finger` | — |
+| Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_hand` | `right_hand` | — |
 | Checkerboard (1-condition) | `checkerboard_1cond.toml` | `Checkerboard1Cond_events.tsv` | `checkerboard` | *(empty — single-condition beta map, i.e. ON vs the implicit rest/OFF baseline)* | — |
 | Checkerboard (2-condition) | `checkerboard_2cond.toml` | `Checkerboard2Cond_events.tsv` | `left` | `right` | — |
 | Checkerboard (3-condition) | `checkerboard_3cond.toml` | `Checkerboard3Cond_events.tsv` | `center` | `left` | `right` |
@@ -331,7 +331,16 @@ reading `Up next: <task> (i of N) — Experimenter: press SPACE to continue.`
 when each task starts, rather than it auto-starting the instant
 `run_battery` is called or the moment the previous task ends. Escape at a
 staging screen stops the whole battery there (the window still closes
-cleanly). See `ptb_show_staging_screen.m`.
+cleanly). See `ptb_show_staging_screen.m`. After the LAST task, an end screen
+("All tasks complete. Experimenter: press SPACE to exit.") holds until SPACE is
+pressed before the window closes; it isn't shown if the battery was stopped early.
+
+`<task>` is a participant-facing name, not the function name: the three
+checkerboard tasks all show as **Visual Perception Task**, `motor_task` as
+**Voluntary Movement Task**, and `blackjack_task` as **Blackjack Game**. Those
+names live in `display_name()` at the bottom of `run_battery.m` — edit them
+there (a task not listed just shows its function name). The MATLAB console
+log lines still use the function names.
 
 This works because every task script already takes `win` as a parameter
 everywhere it matters (`ptb_wait_for_trigger`, `ptb_run_block_loop`, etc.)
@@ -341,9 +350,9 @@ about how a task runs changes.
 
 ## What each task looks like
 
-**`motor_task.m`** — bold green "LEFT FINGER" / "RIGHT FINGER" during the
-movement blocks; plain fixation (`+`) during rest. Matches
-`taskActivation.py`'s `glmCondA=left_finger` / `glmCondB=right_finger`
+**`motor_task.m`** — bold green "SQUEEZE LEFT HAND" / "SQUEEZE RIGHT HAND" during the
+squeezing blocks; plain fixation (`+`) during rest. Matches
+`taskActivation.py`'s `glmCondA=left_hand` / `glmCondB=right_hand`
 contrast when the toml is pointed at `GenericMotorLR_events.tsv`.
 
 **`blackjack_task.m`** — each 3.0s trial deals two cards face-up, with a
@@ -383,7 +392,7 @@ win / 24 lose / 10 tie), ~5 minutes total.
 **`checkerboard_1cond_task.m`** — a full-contrast checkerboard patch centered
 on screen during ON blocks, with a genuine flicker: OFF (blank) -> ON
 (pattern A) -> OFF -> ON (pattern B, the black<->white inverse of A) ->
-repeat, each state lasting `1/'FlickerHz'` (default 8) -- so a given screen
+repeat, each state lasting `1/'FlickerHz'` (default 2) -- so a given screen
 location truly cycles black -> white -> black, rather than swapping
 directly between two checkerboards with no blank in between (which can
 look like a static image). Plain fixation during OFF blocks. Matches

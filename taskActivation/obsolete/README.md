@@ -15,8 +15,8 @@ task set is now just: `motor` (`stimuli_ptb/motor_task.m` /
 - `stimuli/hcp_motor_task.py` — the original 5-condition HCP motor task
   (left/right hand, left/right foot, tongue, each with a get-ready cue),
   reading the real ds000244 `HcpMotor_acq-ap_events.tsv` timing. Superseded
-  by the project's own simpler `generic_motor_task.py` (left/right finger
-  tapping only, no cues). No Psychtoolbox equivalent ever existed for this
+  by the project's own simpler `generic_motor_task.py` (left/right hand
+  squeezing only, no cues). No Psychtoolbox equivalent ever existed for this
   one — `stimuli_ptb/motor_task.m` was always the *generic* design.
 - `stimuli/hcp_gambling_task.py` / `stimuli_ptb/gambling_task.m` — the
   original HCP card-guess task (reward/punishment/neutral; the guess never

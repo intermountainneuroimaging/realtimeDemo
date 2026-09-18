@@ -85,7 +85,7 @@ unattended.
 own `conf/*.toml` instead of the default:
 
 ```bash
-./quickstart.sh motor               # LEFT vs RIGHT finger tapping
+./quickstart.sh motor               # LEFT vs RIGHT hand squeezing
 ./quickstart.sh checkerboard_1cond  # flickering checkerboard ON vs OFF
 ./quickstart.sh checkerboard_3cond  # checkerboard CENTER vs LEFT vs RIGHT (3-way)
 ./quickstart.sh checkerboard_2cond  # checkerboard LEFT vs RIGHT, no CENTER (shorter run)
@@ -103,7 +103,7 @@ handy for bridging/streaming a different run each session:
 
 | Task | `conf/*.toml` | `eventsFile` | `glmCondA` vs `glmCondB` (`vs glmCondC`) | Present it with |
 |---|---|---|---|---|
-| Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_finger` vs `right_finger` | `stimuli_ptb/motor_task.m` or `stimuli/generic_motor_task.py` |
+| Motor | `motor.toml` | `GenericMotorLR_events.tsv` | `left_hand` vs `right_hand` | `stimuli_ptb/motor_task.m` or `stimuli/generic_motor_task.py` |
 | Checkerboard (1-condition) | `checkerboard_1cond.toml` | `Checkerboard1Cond_events.tsv` | `checkerboard` vs *(empty — beta map, i.e. vs the implicit rest/OFF baseline)* | `stimuli_ptb/checkerboard_1cond_task.m` or `stimuli/checkerboard_1cond_task.py` |
 | Checkerboard (2-condition) | `checkerboard_2cond.toml` | `Checkerboard2Cond_events.tsv` | `left` vs `right` (ordinary 2-way, no CENTER) | `stimuli_ptb/checkerboard_2cond_task.m` or `stimuli/checkerboard_2cond_task.py` |
 | Checkerboard (3-condition) | `checkerboard_3cond.toml` | `Checkerboard3Cond_events.tsv` | `center` vs `left` vs `right` (3-way one-vs-rest; task-specific, see [stimuli_ptb/README.md](stimuli_ptb/README.md#3-way-one-vs-rest-contrast-checkerboard_3cond-only)) | `stimuli_ptb/checkerboard_3cond_task.m` or `stimuli/checkerboard_3cond_task.py` |
@@ -375,7 +375,7 @@ taskActivation/
 │                              # -- just picks the matching conf/*.toml and runs taskActivation.py
 ├── conf/
 │   ├── taskActivation.toml   # default/example config: HcpMotor (left_hand vs right_hand)
-│   ├── motor.toml            # LEFT vs RIGHT finger tapping (GenericMotorLR_events.tsv)
+│   ├── motor.toml            # LEFT vs RIGHT hand squeezing (GenericMotorLR_events.tsv)
 │   ├── checkerboard_1cond.toml  # flickering checkerboard ON vs OFF (Checkerboard1Cond_events.tsv)
 │   ├── checkerboard_2cond.toml  # checkerboard LEFT vs RIGHT, no CENTER, ordinary 2-way
 │   │                          # (Checkerboard2Cond_events.tsv)
@@ -384,7 +384,7 @@ taskActivation/
 │   └── gambling.toml         # blackjack WIN vs LOSE, tie as covariate (Blackjack_events.tsv)
 ├── study_design/
 │   ├── HcpMotor_acq-ap_events.tsv     # real ds000244 HcpMotor events (drives conf/taskActivation.toml)
-│   ├── GenericMotorLR_events.tsv      # this project's own LEFT/RIGHT-finger design (conf/motor.toml)
+│   ├── GenericMotorLR_events.tsv      # this project's own LEFT/RIGHT-hand squeezing design (conf/motor.toml)
 │   ├── Checkerboard1Cond_events.tsv   # this project's own ON/OFF checkerboard design (conf/checkerboard_1cond.toml)
 │   ├── Checkerboard2Cond_events.tsv   # this project's own LEFT/RIGHT-only checkerboard design (conf/checkerboard_2cond.toml)
 │   ├── Checkerboard3Cond_events.tsv   # this project's own 3-position checkerboard design (conf/checkerboard_3cond.toml)
@@ -404,7 +404,7 @@ taskActivation/
 ├── stimuli/                   # PsychoPy presentation of the deployed tasks
 │   ├── README.md                    # install/test PsychoPy, setup, running
 │   ├── common.py                     # shared trigger-wait / event-loop / timing-log helpers
-│   ├── generic_motor_task.py         # presents this project's own LEFT/RIGHT-finger design (conf/motor.toml)
+│   ├── generic_motor_task.py         # presents this project's own LEFT/RIGHT-hand squeezing design (conf/motor.toml)
 │   ├── checkerboard_1cond_task.py    # presents this project's own flickering checkerboard ON/OFF design (conf/checkerboard_1cond.toml)
 │   ├── checkerboard_2cond_task.py    # presents this project's own LEFT/RIGHT-only checkerboard design (conf/checkerboard_2cond.toml)
 │   ├── checkerboard_3cond_task.py    # presents this project's own 3-position checkerboard design (conf/checkerboard_3cond.toml)

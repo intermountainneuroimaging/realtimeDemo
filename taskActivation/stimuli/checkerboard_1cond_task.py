@@ -75,9 +75,9 @@ def main():
     ap.add_argument('--duration', type=float, default=None,
                     help='total run length in seconds (default: end of the last event); '
                          'pass nVols*TR to also show trailing rest')
-    ap.add_argument('--flicker-hz', type=float, default=8.0,
+    ap.add_argument('--flicker-hz', type=float, default=2.0,
                     help='how many times per second the checkerboard changes state during ON '
-                         'blocks (default 8): OFF (blank) -> ON (pattern A) -> OFF -> ON '
+                         'blocks (default 2): OFF (blank) -> ON (pattern A) -> OFF -> ON '
                          '(pattern B, the black<->white inverse of A) -> repeat, each state '
                          'lasting 1/flicker_hz -- so the same screen location genuinely goes '
                          'black, then white, then black, rather than swapping directly between '
@@ -121,9 +121,12 @@ def main():
         "CHECKERBOARD VIEWING TASK\n\n"
         "You will see a flickering black-and-white checkerboard pattern, alternating "
         "with a plain + fixation cross.\n\n"
-        "Goal: simply keep your eyes open and look at the checkerboard while it is "
-        "on screen, and rest your eyes on the + cross in between. No response or "
-        "button press is needed during the task -- just watch and stay still.\n\n"
+        "Goal: keep your eyes fixed on the CENTER of the screen THE WHOLE TIME -- on "
+        "the + cross when it is showing, and on the center of the checkerboard while "
+        "it is on screen. Do not let your eyes wander around the checkerboard or look "
+        "away from the center, even though the pattern is flickering. No response or "
+        "button press is needed during the task -- just keep your eyes on the center "
+        "and stay still.\n\n"
         "If you have any questions, ask the experimenter now. When you are "
         "comfortable, press any button to continue.")
     if common.show_instructions(win, instructions):

@@ -24,7 +24,7 @@ construction.
 
 | Script | Events file | Conditions |
 |---|---|---|
-| `generic_motor_task.py` | `../study_design/GenericMotorLR_events.tsv` | this project's own left/right finger-tapping design (`conf/motor.toml`) -- 30s tapping blocks separated by 10s rest, no get-ready cues; the Psychtoolbox equivalent is `../stimuli_ptb/motor_task.m` |
+| `generic_motor_task.py` | `../study_design/GenericMotorLR_events.tsv` | this project's own left/right hand-squeezing design (`conf/motor.toml`) -- 30s squeezing blocks separated by 10s rest, no get-ready cues; the Psychtoolbox equivalent is `../stimuli_ptb/motor_task.m` |
 | `checkerboard_1cond_task.py` | `../study_design/Checkerboard1Cond_events.tsv` | this project's own flickering-checkerboard ON/OFF localizer (`conf/checkerboard_1cond.toml`) -- 20s ON/OFF blocks, genuine OFF/pattern-A/OFF/pattern-B flicker (not two patterns swapped with no blank); the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_1cond_task.m` |
 | `checkerboard_2cond_task.py` | `../study_design/Checkerboard2Cond_events.tsv` | the LEFT/RIGHT half of `checkerboard_3cond_task.py` (`conf/checkerboard_2cond.toml`) -- no CENTER condition, an ordinary 2-condition GLM contrast, shorter run; the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_2cond_task.m` |
 | `checkerboard_3cond_task.py` | `../study_design/Checkerboard3Cond_events.tsv` | this project's own 3-position checkerboard localizer (`conf/checkerboard_3cond.toml`) -- CENTER is a small foveal square, LEFT/RIGHT are full-height bars flush to the screen edge, same OFF/A/OFF/B flicker as `checkerboard_1cond_task.py`, 3-way one-vs-rest GLM contrast; the Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_3cond_task.m` |
@@ -144,15 +144,15 @@ All five:
 
 ## What each task looks like
 
-**`generic_motor_task.py`** — bold green "LEFT FINGER" / "RIGHT FINGER"
-during the 30s tapping blocks; plain fixation (`+`) during the 10s rest
+**`generic_motor_task.py`** — bold green "SQUEEZE LEFT HAND" / "SQUEEZE RIGHT HAND"
+during the 30s squeezing blocks; plain fixation (`+`) during the 10s rest
 blocks between them (no get-ready cue -- rest doubles as the lead-in).
-Matches `conf/motor.toml`'s `glmCondA=left_finger` / `glmCondB=right_finger`
+Matches `conf/motor.toml`'s `glmCondA=left_hand` / `glmCondB=right_hand`
 contrast for live analysis.
 
 **`checkerboard_1cond_task.py`** — a flickering black<->white checkerboard
 patch centered on screen during 20s ON blocks: a genuine flicker
-(`--flicker-hz`, default 8) that goes OFF (blank) -> ON (pattern A) -> OFF
+(`--flicker-hz`, default 2) that goes OFF (blank) -> ON (pattern A) -> OFF
 -> ON (pattern B, the black<->white inverse of A) -> repeat, each state
 lasting 1/flicker_hz -- so a given screen location truly cycles black ->
 white -> black, rather than swapping directly between two checkerboards
@@ -175,7 +175,7 @@ ordinary 2-condition design, it matches `taskActivation.py`'s standard
 Psychtoolbox equivalent is `../stimuli_ptb/checkerboard_2cond_task.m`.
 
 **`checkerboard_3cond_task.py`** — the same OFF/A/OFF/B flicker as
-`checkerboard_1cond_task.py` (`--flicker-hz`, default 8), shown in one of
+`checkerboard_1cond_task.py` (`--flicker-hz`, default 2), shown in one of
 three screen positions per 12s block: CENTER, LEFT, or RIGHT. CENTER is a
 SQUARE (its height set equal to its own width, not the window height)
 centered on screen, so it stimulates only the fovea; LEFT and RIGHT are

@@ -27,15 +27,21 @@ function run_battery(tasks, varargin)
 %     'SkipSyncTests'  true to disable PTB's flip-timing sync tests, for
 %                      testing on a non-research display (default false)
 %     'StagingMessage' sprintf template for the between-tasks screen, with
-%                      one %s for the upcoming task's name (default:
-%                      'Up next: %s (i of N)\n\nExperimenter: press SPACE
-%                      to continue.').
+%                      one %s for the upcoming task's participant-facing name
+%                      (see display_name() at the bottom of this file:
+%                      'Visual Perception Task' for the checkerboard tasks,
+%                      'Voluntary Movement Task' for motor_task, 'Blackjack
+%                      Game' for blackjack_task) (default: 'Up next: %s
+%                      (i of N)\n\nExperimenter: press SPACE to continue.').
 %
 %   Shows the staging screen BEFORE every task, including the first -- so
 %   the experimenter always has a controlled moment to hit SPACE right
 %   before a task starts, rather than it auto-starting the instant
 %   run_battery is called. Escape at any staging screen stops the whole
-%   battery early (the already-open window is still closed cleanly). The
+%   battery early (the already-open window is still closed cleanly). After
+%   the LAST task, an end screen -- "All tasks complete. Experimenter: press
+%   SPACE to exit." -- holds until SPACE (or Escape) is pressed, then the
+%   window closes; it is not shown when the battery is stopped early. The
 %   window itself is opened ONCE at the start and closed ONCE at the end
 %   (or on an aborted battery/any error), never in between -- that's the
 %   whole point of this script over calling each task function directly.
@@ -73,13 +79,14 @@ function run_battery(tasks, varargin)
     for i = 1:numel(tasks)
         fn = tasks{i}{1};
         args = tasks{i}{2};
-        taskName = func2str(fn);
+        taskName = func2str(fn);           % function name -- used in the console log lines
+        shownName = display_name(taskName);   % participant-facing name -- used on the staging screen
 
         if isempty(opt.StagingMessage)
             msg = sprintf('Up next: %s  (%d of %d)\n\nExperimenter: press SPACE to continue.', ...
-                taskName, i, numel(tasks));
+                shownName, i, numel(tasks));
         else
-            msg = sprintf(opt.StagingMessage, taskName);
+            msg = sprintf(opt.StagingMessage, shownName);
         end
         if ptb_show_staging_screen(win, msg)
             fprintf('[run_battery] stopped before task %d/%d (%s).\n', i, numel(tasks), taskName);
@@ -90,9 +97,31 @@ function run_battery(tasks, varargin)
         fn(args{:}, 'Win', win);
     end
 
+    % end screen -- held until the experimenter presses SPACE, so the display (and
+    % the last task's screen) doesn't vanish the instant the final task ends
+    ptb_show_staging_screen(win, sprintf('All tasks complete.\n\nExperimenter: press SPACE to exit.'));
+
     plural = '';
     if numel(tasks) ~= 1
         plural = 's';
     end
     fprintf('[run_battery] battery complete (%d task%s).\n', numel(tasks), plural);
+end
+
+
+function name = display_name(fnName)
+%DISPLAY_NAME Participant-facing name for a task function, shown on the
+%   staging screen instead of the raw function name. To rename a task, or add
+%   a new one, edit the cases below; anything not listed falls back to its
+%   function name.
+    switch fnName
+        case {'checkerboard_1cond_task', 'checkerboard_2cond_task', 'checkerboard_3cond_task'}
+            name = 'Visual Perception Task';
+        case 'motor_task'
+            name = 'Voluntary Movement Task';
+        case 'blackjack_task'
+            name = 'Blackjack Game';
+        otherwise
+            name = fnName;
+    end
 end

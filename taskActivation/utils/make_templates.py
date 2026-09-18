@@ -47,8 +47,8 @@ OUT_DIR = os.path.join(PROJECT_ROOT, 'templates')
 # A screen whose stem is a GLM condition takes that condition's trace colour; the
 # rest (fixation, the blackjack decision screen, tie) stay gray.
 PANELS = {
-    'motor': [('rest', 'rest (fixation)'), ('left_finger', 'left_finger'),
-              ('right_finger', 'right_finger')],
+    'motor': [('rest', 'rest (fixation)'), ('left_hand', 'left_hand'),
+              ('right_hand', 'right_hand')],
     'checkerboard_1cond': [('rest', 'rest (fixation)'), ('checkerboard', 'checkerboard')],
     'checkerboard_2cond': [('rest', 'rest (fixation)'), ('left', 'left'), ('right', 'right')],
     'checkerboard_3cond': [('rest', 'rest (fixation)'), ('center', 'center'),

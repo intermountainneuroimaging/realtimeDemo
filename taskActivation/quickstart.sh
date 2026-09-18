@@ -8,7 +8,7 @@
 #
 # Usage:
 #   ./quickstart.sh                     # default config (conf/taskActivation.toml)
-#   ./quickstart.sh motor               # LEFT vs RIGHT finger tapping (conf/motor.toml)
+#   ./quickstart.sh motor               # LEFT vs RIGHT hand squeezing (conf/motor.toml)
 #   ./quickstart.sh checkerboard_1cond  # flickering checkerboard ON vs OFF (conf/checkerboard_1cond.toml)
 #   ./quickstart.sh checkerboard_3cond  # checkerboard CENTER vs LEFT vs RIGHT (conf/checkerboard_3cond.toml)
 #   ./quickstart.sh checkerboard_2cond  # checkerboard LEFT vs RIGHT, no CENTER (conf/checkerboard_2cond.toml)

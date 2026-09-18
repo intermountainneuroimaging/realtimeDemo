@@ -35,7 +35,7 @@ function checkerboard_2cond_task(varargin)
 %     'Duration'      total run length in seconds (default: end of the last
 %                     event); pass nVols*TR to also show trailing rest
 %     'FlickerHz'     how many times per second the checkerboard's state
-%                     changes during a LEFT/RIGHT block (default 8): OFF
+%                     changes during a LEFT/RIGHT block (default 2): OFF
 %                     (blank) -> ON (pattern A) -> OFF -> ON (pattern B,
 %                     the black<->white inverse of A) -> repeat, each
 %                     state lasting 1/FlickerHz -- same semantics as
@@ -67,7 +67,7 @@ function checkerboard_2cond_task(varargin)
     addParameter(p, 'TriggerKey', {'5', '5%', 't'});
     addParameter(p, 'EventsFile', fullfile(here, '..', 'study_design', 'Checkerboard2Cond_events.tsv'));
     addParameter(p, 'Duration', []);
-    addParameter(p, 'FlickerHz', 8);
+    addParameter(p, 'FlickerHz', 2);
     addParameter(p, 'Windowed', false);
     addParameter(p, 'ScreenWidth', []);
     addParameter(p, 'ScreenHeight', []);
