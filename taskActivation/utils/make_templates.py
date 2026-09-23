@@ -43,20 +43,9 @@ import run_task                    # noqa: E402
 SNAP_DIR = os.path.join(PROJECT_ROOT, 'templates', 'stimulus_snapshots')
 OUT_DIR = os.path.join(PROJECT_ROOT, 'templates')
 
-# Screens shown to the participant, in display order: (snapshot file stem, label).
-# A screen whose stem is a GLM condition takes that condition's trace colour; the
-# rest (fixation, the blackjack decision screen, tie) stay gray.
-PANELS = {
-    'motor': [('rest', 'rest (fixation)'), ('left_hand', 'left_hand'),
-              ('right_hand', 'right_hand')],
-    'motor_guessing': [('rest', 'rest (fixation)'), ('move', 'move')],
-    'checkerboard_1cond': [('rest', 'rest (fixation)'), ('checkerboard', 'checkerboard')],
-    'checkerboard_2cond': [('rest', 'rest (fixation)'), ('left', 'left'), ('right', 'right')],
-    'checkerboard_3cond': [('rest', 'rest (fixation)'), ('center', 'center'),
-                           ('left', 'left'), ('right', 'right')],
-    'gambling': [('rest', 'rest (fixation)'), ('decision', 'decision (hit / stay)'),
-                 ('win', 'win'), ('lose', 'lose'), ('tie', 'tie (covariate)')],
-}
+# Screens shown to the participant per task live in rt_analysis.STIM_PANELS (shared with
+# the end-of-run recap, taskActivation.py --recap).
+PANELS = mrt.STIM_PANELS
 
 
 def _as_list(v):
@@ -117,14 +106,7 @@ def build_task(name, tr):
         label = f"{cond_a} GLM β-weight: red positive / blue negative"
 
     color_of = {c: colors[k % len(colors)] for k, c in enumerate(conds)}
-    panels = []
-    for stem, panel_label in PANELS[name]:
-        path = os.path.join(SNAP_DIR, name, f'{stem}.png')
-        if not os.path.exists(path):
-            raise FileNotFoundError(
-                f"{path} is missing -- run stimuli/render_snapshots.py {name} "
-                "(needs PsychoPy; see its docstring)")
-        panels.append({'image': path, 'label': panel_label, 'color': color_of.get(stem, '#aaaaaa')})
+    panels = mrt.stim_panels_for(name, SNAP_DIR, color_of, strict=True)
 
     z_cuts = mrt.parse_float_list(run_task.Z_CUTS.get(name))
     return dict(traces=traces, z_cuts=z_cuts, panels=panels, full_xlim=(0.0, max((n_vols - 1) * tr, tr)),

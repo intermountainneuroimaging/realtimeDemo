@@ -18,6 +18,7 @@
 #   ./quickstart.sh --run 2             # default config, run number 2 (task name optional)
 #   ./quickstart.sh motor --plot-every-frame --skip-motion-correction
 #   ./quickstart.sh motor --save-gif    # also assemble an end-of-run activation GIF (off by default)
+#   ./quickstart.sh motor --recap       # batch: no frame-by-frame work; ONE motion plot + ONE recap image at the end
 #
 # The <task> argument is just run_task.py's own task name -- see run_task.py
 # / README.md for what each config's eventsFile/GLM contrast is, and
@@ -25,10 +26,14 @@
 # computer while this runs. --run/-r overrides the toml's runNum, forwarded
 # straight through to run_task.py / taskActivation.py's own --run -- handy
 # for bridging/streaming a different run each session without editing the toml.
-# --plot-every-frame, --skip-motion-correction, and --save-gif are likewise
-# forwarded straight through to taskActivation.py's own flags of the same
-# name -- see its --help for what each actually does (and
+# --plot-every-frame, --skip-motion-correction, --save-gif, and --recap are
+# likewise forwarded straight through to taskActivation.py's own flags of the
+# same name -- see its --help for what each actually does (and
 # --skip-motion-correction's real accuracy tradeoff) before using them.
+# --recap is a batch run: no per-frame processing or plots -- it fetches the volumes,
+# then motion-corrects/smooths/fits the GLM once at the end and writes ONE motion plot and
+# ONE recap image to $OUT_DIR/recaps/recap_<task>_run<N>.png (also shown in the viewer). That recaps/ folder is the one thing kept when this script clears
+# $OUT_DIR at the start of each run, so recaps from a session's runs pile up.
 #
 # All paths below have sane defaults (this project folder's own dicomDir/ and
 # a sibling outDir/), but you can override any of them by exporting first:
@@ -49,6 +54,7 @@ RUN_ID=""
 PLOT_EVERY_FRAME=""
 SKIP_MOTION_CORRECTION=""
 SAVE_GIF=""
+RECAP=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --run|-r)
@@ -73,6 +79,10 @@ while [ $# -gt 0 ]; do
             ;;
         --save-gif)
             SAVE_GIF=1
+            shift
+            ;;
+        --recap)
+            RECAP=1
             shift
             ;;
         -*)
@@ -121,8 +131,9 @@ mkdir -p "$DICOM_DIR" "$OUT_DIR"
 # leftover from a previous run instead of actually waiting for this run's
 # own output. "${OUT_DIR:?}" aborts instead of silently expanding to "" if
 # OUT_DIR were ever empty -- "$OUT_DIR"/* would otherwise become the
-# literal path /*.
-rm -rf "${OUT_DIR:?}"/*
+# literal path /*. The one exception is recaps/ (--recap's saved end-of-run
+# images), which is meant to outlive the next run's cleanup.
+find "${OUT_DIR:?}" -mindepth 1 -maxdepth 1 ! -name recaps -exec rm -rf {} +
 
 echo "PROJ_NAME=$PROJ_NAME"
 echo "PROJ_DIR=$PROJ_DIR"
@@ -133,6 +144,7 @@ echo "RUN_ID=${RUN_ID:-<default: from the toml>}"
 echo "PLOT_EVERY_FRAME=${PLOT_EVERY_FRAME:-0}"
 echo "SKIP_MOTION_CORRECTION=${SKIP_MOTION_CORRECTION:-0}"
 echo "SAVE_GIF=${SAVE_GIF:-0}"
+echo "RECAP=${RECAP:-0}"
 echo
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -222,6 +234,9 @@ if [ -n "$SKIP_MOTION_CORRECTION" ]; then
 fi
 if [ -n "$SAVE_GIF" ]; then
     RUN_CMD="$RUN_CMD --save-gif"
+fi
+if [ -n "$RECAP" ]; then
+    RUN_CMD="$RUN_CMD --recap"
 fi
 yes y | docker run -i --rm \
     -e PYTHONUNBUFFERED=1 \

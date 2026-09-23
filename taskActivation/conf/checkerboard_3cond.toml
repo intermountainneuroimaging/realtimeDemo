@@ -36,8 +36,8 @@ eventsFile = "Checkerboard3Cond_events.tsv"
 #
 # Not configured here (fixed in taskActivation.py -- not deployment-specific):
 # TR is always inferred from the first real DICOM's RepetitionTime; hrf_delay
-# is derived from that TR; nVols falls back to an events-file estimate if the
-# stream can't report its own length; the BIDS 'subject' tag is bookkeeping
+# is derived from that TR; nVols comes from scanTime (below) / TR -- an events-file
+# estimate is only the fallback; the BIDS 'subject' tag is bookkeeping
 # only. See the AUTO_TR_TIMEOUT / HRF_DELAY_SECONDS / NVOLS_FALLBACK_PADDING /
 # SUBJECT_NUM constants near the top of taskActivation.py.
 
@@ -48,6 +48,11 @@ runNum = [1]
 dicomTimeout = 30.0        # seconds to wait for EACH volume's DICOM before raising
                            # (rtCommon's own default is only 5s -- too short for a real
                            # scanner's startup gap or an occasional slow volume)
+scanTime = 300             # TOTAL SCAN LENGTH in seconds -- the design's last event end (Checkerboard3Cond_events.tsv).
+                           # The run expects floor(scanTime / TR) volumes (TR comes from the scanner's own
+                           # DICOMs), so it finishes -- final plot, recap, GIF -- as soon as the last one is in,
+                           # instead of waiting on volumes that never arrive. Set nVols = <count> here to force
+                           # an exact number instead; leave both out to estimate from the events file + 10.
 demoStep = 0               # TESTING ONLY: artificial per-volume delay (s) passed to rtCommon's
                            # getIncremental. 0 = no artificial delay (deliver/plot as soon as each
                            # DICOM is there). Never sets TR -- TR always comes from the DICOM

@@ -268,6 +268,34 @@ def classify_conditions(rows, condA=None, condB=None, condC=None, rest_types=Non
 
 
 # ======================= design from a BIDS events.tsv =======================
+def resolve_nvols(TR, events_rows, n_vols=0, scan_time=0.0, padding=10):
+    """How many volumes a run should expect, and where that number came from:
+    returns (nVols, description). A live DICOM stream can't report its own length
+    (rt-cloud raises NotImplementedError), and the run loop waits for every volume up to
+    nVols -- so a count that is too HIGH stalls at the end until dicomTimeout and then
+    aborts, before the final plot / recap / GIF are written. In order of preference:
+      1. `n_vols`    (toml `nVols`)    -- an exact count, used as given;
+      2. `scan_time` (toml `scanTime`) -- the total scan length in seconds: whole volumes
+         that fit, floor(scan_time / TR). TR comes from the scanner's own DICOMs, so the
+         count stays right if the protocol's TR changes. Rounded DOWN: a missing last
+         partial volume is harmless, waiting on one that never arrives is not;
+      3. otherwise an estimate from the events file -- ceil(last event end / TR) plus
+         `padding` volumes of headroom (which only works if the scanner really does
+         acquire that many extra).
+    0 / None mean "not set"."""
+    if n_vols:
+        return int(n_vols), f"nVols = {int(n_vols)} from the config"
+    if scan_time and scan_time > 0:
+        n = int(scan_time / TR + 1e-6)
+        if n < 1:
+            raise ValueError(f"scanTime={scan_time:g}s is shorter than one TR ({TR:g}s)")
+        return n, f"scanTime = {scan_time:g}s / TR {TR:g}s"
+    last = max(o + d for o, d, _ in events_rows)
+    n = int(np.ceil(last / TR)) + padding
+    return n, (f"estimated from the events file (last event ends {last:.1f}s) + {padding} "
+               f"volumes of headroom -- set scanTime or nVols in the config to prescribe it")
+
+
 def read_events_tsv(path):
     rows = []
     with open(path) as f:
@@ -615,11 +643,120 @@ def _draw_trace_rows(fig, gs, n_brain, traces, full_xlim=None):
         ax.legend(loc='upper right', fontsize=7, facecolor='black', labelcolor='white')
 
 
+# Screens shown to the participant, per task, in display order: (snapshot file stem,
+# label). The PsychoPy snapshots themselves live in
+# templates/stimulus_snapshots/<task>/<stem>.png (made by stimuli/render_snapshots.py).
+# A screen whose stem is a GLM condition takes that condition's trace colour;
+# the rest (fixation, the blackjack decision screen, tie) stay gray. Used by the
+# pre-data templates (utils/make_templates.py) and by the end-of-run recap
+# (taskActivation.py --recap), so both show the participant's screens identically.
+STIM_PANELS = {
+    'motor': [('rest', 'rest (fixation)'), ('left_hand', 'left_hand'),
+              ('right_hand', 'right_hand')],
+    'motor_guessing': [('rest', 'rest (fixation)'), ('move', 'move')],
+    'checkerboard_1cond': [('rest', 'rest (fixation)'), ('checkerboard', 'checkerboard')],
+    'checkerboard_2cond': [('rest', 'rest (fixation)'), ('left', 'left'), ('right', 'right')],
+    'checkerboard_3cond': [('rest', 'rest (fixation)'), ('center', 'center'),
+                           ('left', 'left'), ('right', 'right')],
+    'gambling': [('rest', 'rest (fixation)'), ('decision', 'decision (hit / stay)'),
+                 ('win', 'win'), ('lose', 'lose'), ('tie', 'tie (covariate)')],
+}
+
+
+def stim_panels_for(task, snap_root, cond_colors=None, strict=False):
+    """`stim_panels` list (see template_png()) for `task`: the participant's
+    screens from STIM_PANELS, read from snap_root/<task>/<stem>.png and bordered
+    in `cond_colors[stem]` (a {condition: matplotlib colour} dict; default gray).
+    A task with no STIM_PANELS entry gives []. A missing snapshot is skipped
+    with a warning -- or raises FileNotFoundError when `strict` -- since the
+    strip is a nicety a run must never fail over."""
+    panels = []
+    for stem, label in STIM_PANELS.get(task, []):
+        path = os.path.join(snap_root, task, f'{stem}.png')
+        if not os.path.exists(path):
+            if strict:
+                raise FileNotFoundError(
+                    f"{path} is missing -- run stimuli/render_snapshots.py {task} "
+                    "(needs PsychoPy; see its docstring)")
+            print(f"[live] no stimulus snapshot {path} -- leaving it out of the strip")
+            continue
+        panels.append({'image': path, 'label': label,
+                       'color': (cond_colors or {}).get(stem, '#aaaaaa')})
+    return panels
+
+
+def _live_figure(n_traces, header=False):
+    """The figure + gridspec every live-style plot shares: one brain-mosaic row
+    then `n_traces` line-plot rows. With `header`, adds a 1.2-inch band ABOVE
+    it (for _draw_header_band()) while the mosaic and trace rows keep the
+    header-less figure's exact proportions -- matplotlib's default 0.12 top /
+    0.11 bottom margins are of the header-less height, so they're re-expressed
+    as the same absolute inches. Returns (fig, gs, fig_w, fig_h)."""
+    import matplotlib.pyplot as plt
+    n_brain = 1
+    live_h = 2.9 * n_brain + 2.0 * n_traces
+    hdr_h = 1.2 if header else 0.0
+    fig_w, fig_h = 13.0, live_h + hdr_h
+    fig = plt.figure(figsize=(fig_w, fig_h), facecolor='black')
+    kw = {}
+    if header:
+        kw = dict(top=1 - (0.12 * live_h + hdr_h) / fig_h, bottom=0.11 * live_h / fig_h)
+    gs = fig.add_gridspec(n_brain + n_traces, 1,
+                          height_ratios=[3.0] * n_brain + [1.5] * n_traces, hspace=0.45, **kw)
+    return fig, gs, fig_w, fig_h
+
+
+def _draw_header_band(fig, fig_w, fig_h, header):
+    """Fill the band _live_figure(header=True) leaves above the plot:
+    `header` = {'badge': str (big yellow, top-left), 'title': str, 'subtitle':
+    str or None, 'stim_panels': [...] (see template_png()), 'stim_caption':
+    str}. The stimulus strip sits in the top-right corner."""
+    import textwrap
+    import matplotlib.image as mpimg
+
+    def fx(inches):
+        return inches / fig_w
+
+    def fy(inches_from_top):
+        return 1 - inches_from_top / fig_h
+
+    left = 0.26
+    fig.text(fx(left), fy(0.12), header.get('badge', ''), color='yellow', fontsize=14,
+             fontweight='bold', va='top', ha='left')
+    fig.text(fx(left), fy(0.50), '\n'.join(textwrap.wrap(header.get('title', ''), 42)),
+             color='white', fontsize=10, va='top', ha='left')
+    if header.get('subtitle'):
+        fig.text(fx(left), fy(0.95), '\n'.join(textwrap.wrap(header['subtitle'], 60)),
+                 color='#bbbbbb', fontsize=8.5, va='top', ha='left')
+
+    panels = header.get('stim_panels') or []
+    if panels:
+        n, gap = len(panels), 0.12
+        right_edge = fig_w - 0.26
+        pw = min(2.2, (8.3 - gap * (n - 1)) / n)   # thumbnail width, inches (16:9)
+        ph = pw * 9.0 / 16.0
+        x0 = right_edge - (n * pw + (n - 1) * gap)
+        top = 0.40
+        fig.text(fx(right_edge), fy(0.12), header.get('stim_caption', 'Shown to the participant'),
+                 color='#bbbbbb', fontsize=9, va='top', ha='right')
+        for i, panel in enumerate(panels):
+            x = x0 + i * (pw + gap)
+            ax = fig.add_axes([fx(x), fy(top + ph), fx(pw), ph / fig_h])
+            img = panel['image']
+            ax.imshow(mpimg.imread(img) if isinstance(img, str) else img)
+            ax.set_xticks([]); ax.set_yticks([])
+            color = panel.get('color', 'white')
+            for sp in ax.spines.values():
+                sp.set_color(color); sp.set_linewidth(2.2)
+            fig.text(fx(x + pw / 2), fy(top + ph + 0.06), panel.get('label', ''), color=color,
+                     fontsize=8, va='top', ha='center')
+
+
 def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
                      peak=None, condAName='A', condBName='B', caption=None, cmap='RdBu_r',
                      contrast3d=None, contrast_thresh=2.0,
                      contrast_label='LEFT vs RIGHT (cumulative)', n_slices=6, z_cuts=None,
-                     voxel_traces=None, frame=None, full_xlim=None):
+                     voxel_traces=None, frame=None, full_xlim=None, header=None):
     """Realtime plot via nilearn.plot_stat_map as a single-row AXIAL MOSAIC.
     Slice positions: `z_cuts` (a list of z-coords in mm) if given, else `n_slices`
     auto-selected levels. Exactly ONE brain mosaic row is drawn: the GLM
@@ -642,7 +779,10 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
     glance-able frame/volume counter distinct from the smaller caption below
     the image. `full_xlim` (optional (lo, hi) in seconds), if given, fixes the
     trace rows' x-axis to the whole expected run instead of just the data seen
-    so far, so the axis doesn't grow/rescale frame to frame."""
+    so far, so the axis doesn't grow/rescale frame to frame. `header` (optional dict --
+    see _draw_header_band()) adds a title band with a strip of the participant's
+    screens above the plot, as in the pre-data template; used for the end-of-run
+    recap, and otherwise left off so the live frames keep their exact layout."""
     try:
         import nibabel as nib
         from nilearn import plotting
@@ -670,11 +810,7 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
         stat_thresh, stat_cmap, stat_title = thresh, cmap, f"{title}  ({cap})"
     traces = voxel_traces or []
     n_brain = 1
-    nrows = n_brain + len(traces)
-    height_ratios = [3.0] * n_brain + [1.5] * len(traces)
-    fig_h = 2.9 * n_brain + 2.0 * len(traces)
-    fig = plt.figure(figsize=(13, fig_h), facecolor='black')
-    gs = fig.add_gridspec(nrows, 1, height_ratios=height_ratios, hspace=0.45)
+    fig, gs, fig_w, fig_h = _live_figure(len(traces), header=bool(header))
     ax_top = fig.add_subplot(gs[0])
     # title=None here (not passed to plot_stat_map): nilearn draws its own
     # title INSIDE the image region, near the same top edge where it also
@@ -700,6 +836,8 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
     # measured vs HRF-predicted timecourse at each condition's peak voxel -- see
     # _draw_trace_rows() for the shared x-axis / block-shading details.
     _draw_trace_rows(fig, gs, n_brain, traces, full_xlim)
+    if header:
+        _draw_header_band(fig, fig_w, fig_h, header)
     _atomic_write(out_png, lambda tmp: fig.savefig(tmp, dpi=110, facecolor='black'))
     plt.close(fig)
     return True
@@ -707,7 +845,7 @@ def nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
 
 def nilearn_stat_png_3way(out_png, ref3d, affine, title, maps, labels, colors,
                           thresh=2.0, n_slices=6, z_cuts=None, frame=None,
-                          voxel_traces=None, full_xlim=None):
+                          voxel_traces=None, full_xlim=None, header=None):
     """Realtime plot via nilearn.plot_stat_map as a single-row AXIAL MOSAIC,
     like nilearn_stat_png() above, but with THREE separately-thresholded
     one-vs-rest contrast maps overlaid in three distinct solid colors
@@ -718,7 +856,7 @@ def nilearn_stat_png_3way(out_png, ref3d, affine, title, maps, labels, colors,
     `labels`/`colors` matching 3-tuples (colors are matplotlib sequential
     colormap names, e.g. ('Blues', 'Reds', 'Greens') -- each map is
     one-sided (only cond > mean(others) is shown), so a diverging colormap
-    isn't needed. `voxel_traces`/`full_xlim` behave exactly as in
+    isn't needed. `voxel_traces`/`full_xlim`/`header` behave exactly as in
     nilearn_stat_png()."""
     try:
         import nibabel as nib
@@ -738,11 +876,7 @@ def nilearn_stat_png_3way(out_png, ref3d, affine, title, maps, labels, colors,
 
     traces = voxel_traces or []
     n_brain = 1
-    nrows = n_brain + len(traces)
-    height_ratios = [3.0] * n_brain + [1.5] * len(traces)
-    fig_h = 2.9 * n_brain + 2.0 * len(traces)
-    fig = plt.figure(figsize=(13, fig_h), facecolor='black')
-    gs = fig.add_gridspec(nrows, 1, height_ratios=height_ratios, hspace=0.45)
+    fig, gs, fig_w, fig_h = _live_figure(len(traces), header=bool(header))
     ax_top = fig.add_subplot(gs[0])
     display = plotting.plot_anat(bg, display_mode='z', cut_coords=cuts, colorbar=False,
                                  black_bg=True, figure=fig, axes=ax_top)
@@ -762,6 +896,8 @@ def nilearn_stat_png_3way(out_png, ref3d, affine, title, maps, labels, colors,
                  color='yellow', fontsize=16, fontweight='bold', va='top', ha='left',
                  bbox=dict(facecolor='black', alpha=0.7, pad=3, edgecolor='none'))
     _draw_trace_rows(fig, gs, n_brain, traces, full_xlim)
+    if header:
+        _draw_header_band(fig, fig_w, fig_h, header)
     _atomic_write(out_png, lambda tmp: fig.savefig(tmp, dpi=110, facecolor='black'))
     plt.close(fig)
     return True
@@ -790,21 +926,10 @@ def template_png(out_png, ref3d, affine, traces, z_cuts, title, caption,
     try:
         import nibabel as nib
         from nilearn import plotting
-        import matplotlib.pyplot as plt
-        import matplotlib.image as mpimg
-        import textwrap
     except Exception:
         return False
     n_brain = 1
-    live_h = 2.9 * n_brain + 2.0 * len(traces)   # nilearn_stat_png()'s own figure height
-    hdr_h = 1.2                                   # extra band above it: badge/title + stimulus strip
-    fig_w, fig_h = 13.0, live_h + hdr_h
-    fig = plt.figure(figsize=(fig_w, fig_h), facecolor='black')
-    # matplotlib's default 0.12 top / 0.11 bottom margins were of the LIVE height;
-    # keep them as the same absolute inches so the brain/trace block matches live.
-    gs = fig.add_gridspec(n_brain + len(traces), 1,
-                          height_ratios=[3.0] * n_brain + [1.5] * len(traces), hspace=0.45,
-                          top=1 - (0.12 * live_h + hdr_h) / fig_h, bottom=0.11 * live_h / fig_h)
+    fig, gs, fig_w, fig_h = _live_figure(len(traces), header=True)
     ax_top = fig.add_subplot(gs[0])
     cuts = list(z_cuts) if z_cuts is not None and len(z_cuts) else n_slices
     bg = nib.Nifti1Image(np.asarray(ref3d, np.float32), affine)
@@ -812,45 +937,9 @@ def template_png(out_png, ref3d, affine, traces, z_cuts, title, caption,
                        black_bg=True, figure=fig, axes=ax_top)
     ax_top.set_title(caption, color='white', fontsize=11, fontweight='bold', y=-0.22)
     _draw_trace_rows(fig, gs, n_brain, traces, full_xlim)
-
-    # ---- header band (figure coordinates, in inches from the top-left) ----
-    def fx(inches):
-        return inches / fig_w
-
-    def fy(inches_from_top):
-        return 1 - inches_from_top / fig_h
-
-    left = 0.26
-    fig.text(fx(left), fy(0.12), badge, color='yellow', fontsize=14, fontweight='bold',
-             va='top', ha='left')
-    fig.text(fx(left), fy(0.50), '\n'.join(textwrap.wrap(title, 42)), color='white',
-             fontsize=10, va='top', ha='left')
-    if subtitle:
-        fig.text(fx(left), fy(0.95), '\n'.join(textwrap.wrap(subtitle, 60)), color='#bbbbbb',
-                 fontsize=8.5, va='top', ha='left')
-
-    panels = stim_panels or []
-    if panels:
-        n, gap = len(panels), 0.12
-        right_edge = fig_w - 0.26
-        pw = min(2.2, (8.3 - gap * (n - 1)) / n)   # thumbnail width, inches (16:9)
-        ph = pw * 9.0 / 16.0
-        x0 = right_edge - (n * pw + (n - 1) * gap)
-        top = 0.40
-        fig.text(fx(right_edge), fy(0.12), stim_caption, color='#bbbbbb', fontsize=9,
-                 va='top', ha='right')
-        for i, panel in enumerate(panels):
-            x = x0 + i * (pw + gap)
-            ax = fig.add_axes([fx(x), fy(top + ph), fx(pw), ph / fig_h])
-            img = panel['image']
-            ax.imshow(mpimg.imread(img) if isinstance(img, str) else img)
-            ax.set_xticks([]); ax.set_yticks([])
-            color = panel.get('color', 'white')
-            for sp in ax.spines.values():
-                sp.set_color(color); sp.set_linewidth(2.2)
-            fig.text(fx(x + pw / 2), fy(top + ph + 0.06), panel.get('label', ''), color=color,
-                     fontsize=8, va='top', ha='center')
-
+    _draw_header_band(fig, fig_w, fig_h, dict(badge=badge, title=title, subtitle=subtitle,
+                                              stim_panels=stim_panels, stim_caption=stim_caption))
+    import matplotlib.pyplot as plt
     _atomic_write(out_png, lambda tmp: fig.savefig(tmp, dpi=110, facecolor='black'))
     plt.close(fig)
     return True
@@ -995,20 +1084,67 @@ def install_template_png(liveDir, template_path):
     return True
 
 
+def copy_png_atomic(src, dest):
+    """Atomically copy a finished PNG to `dest` (creating its folder) -- used to
+    save the end-of-run recap under outDir/recaps/ and to swap it in as
+    current.png. Returns False (never raises) on failure: a copy must not
+    stop a run that has already produced its results."""
+    import shutil
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
+        _atomic_write(dest, lambda tmp: shutil.copyfile(src, tmp))
+    except Exception as e:
+        print(f"[live] couldn't copy {src} -> {dest}: {e}")
+        return False
+    return True
+
+
 def write_live_update(liveDir, run, vol, runLabel, zmap3d, ref3d, affine, peak, thresh,
                       A_trace, B_trace, cond_trace, condAName='A', condBName='B',
                       caption=None, traceALabel=None, traceBLabel=None,
                       contrast3d=None, contrast_thresh=2.0, condLabel=None, n_slices=6,
                       z_cuts=None, contrast_label='LEFT vs RIGHT GLM contrast',
-                      voxel_traces=None, full_xlim=None):
+                      voxel_traces=None, full_xlim=None, header=None, bundle=True):
     """Write the per-update bundle (full 3D map for nilearn) + a nilearn PNG, and
     atomically update the latest.txt pointer. `full_xlim` (optional (lo, hi) in
     seconds -- typically (0, (nVols-1)*TR)), if given, fixes the trace rows'
     x-axis to the whole expected run so it doesn't grow/rescale frame to frame;
     it's persisted in the bundle too so build_activation_gif renders every
-    frame with the same fixed axis."""
+    frame with the same fixed axis. `header` (see nilearn_stat_png()) adds the
+    title band + participant-screens strip; `bundle=False` skips the .npz +
+    latest.txt pointer and only renders the PNG (used by the end-of-run recap,
+    which is one image and no replay)."""
     os.makedirs(liveDir, exist_ok=True)
     fn = os.path.join(liveDir, f'live_run{run}_vol{vol:03d}.npz')
+    out_png = os.path.join(liveDir, 'current.png')
+    if bundle:
+        _write_bundle(liveDir, fn, run, vol, runLabel, zmap3d, affine, peak, thresh,
+                      A_trace, B_trace, cond_trace, condAName, condBName, caption,
+                      traceALabel, traceBLabel, contrast3d, contrast_thresh, condLabel,
+                      n_slices, z_cuts, contrast_label, voxel_traces, full_xlim)
+    cond_txt = f" | {condLabel}" if condLabel else ""
+    title = f"{runLabel} | run {run}" + ("" if header else f" | vol {vol}{cond_txt}")   # recap: no 'vol N'
+    try:
+        ok = nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
+                              peak=peak, condAName=condAName, condBName=condBName,
+                              caption=caption, contrast3d=contrast3d,
+                              contrast_thresh=contrast_thresh, n_slices=n_slices,
+                              z_cuts=z_cuts, contrast_label=contrast_label,
+                              voxel_traces=voxel_traces, frame=(None if header else vol),
+                              full_xlim=full_xlim, header=header)
+        if not ok:
+            _matplotlib_montage_png(out_png, zmap3d, ref3d, peak, thresh, title,
+                                    condAName, condBName, frame=vol)
+    except Exception as e:
+        print(f"[live] activation plot skipped: {e}")
+    return fn
+
+
+def _write_bundle(liveDir, fn, run, vol, runLabel, zmap3d, affine, peak, thresh,
+                  A_trace, B_trace, cond_trace, condAName, condBName, caption,
+                  traceALabel, traceBLabel, contrast3d, contrast_thresh, condLabel,
+                  n_slices, z_cuts, contrast_label, voxel_traces, full_xlim):
+    """write_live_update()'s .npz bundle + latest.txt pointer (see its docstring)."""
     bundle = dict(
         run=run, vol=vol, phase=runLabel, peak=np.array(peak), thresh=thresh,
         condA=condAName, condB=condBName,
@@ -1033,27 +1169,12 @@ def write_live_update(liveDir, run, vol, runLabel, zmap3d, ref3d, affine, peak, 
         with open(tmp, 'w') as f:
             f.write(os.path.basename(fn))
     _atomic_write(os.path.join(liveDir, 'latest.txt'), _w)
-    out_png = os.path.join(liveDir, 'current.png')
-    cond_txt = f" | {condLabel}" if condLabel else ""
-    title = f"{runLabel} | run {run} | vol {vol}{cond_txt}"
-    try:
-        ok = nilearn_stat_png(out_png, zmap3d, ref3d, affine, thresh, title,
-                              peak=peak, condAName=condAName, condBName=condBName,
-                              caption=caption, contrast3d=contrast3d,
-                              contrast_thresh=contrast_thresh, n_slices=n_slices,
-                              z_cuts=z_cuts, contrast_label=contrast_label,
-                              voxel_traces=voxel_traces, frame=vol, full_xlim=full_xlim)
-        if not ok:
-            _matplotlib_montage_png(out_png, zmap3d, ref3d, peak, thresh, title,
-                                    condAName, condBName, frame=vol)
-    except Exception as e:
-        print(f"[live] activation plot skipped: {e}")
-    return fn
 
 
 def write_live_update_3way(liveDir, run, vol, runLabel, ref3d, affine,
                            maps, labels, colors, thresh=2.0, condLabel=None,
-                           n_slices=6, z_cuts=None, voxel_traces=None, full_xlim=None):
+                           n_slices=6, z_cuts=None, voxel_traces=None, full_xlim=None,
+                           header=None):
     """The 3-way sibling of write_live_update() above -- task-specific (see
     checkerboard_3cond / conf/checkerboard_3cond.toml's glmCondC), used ONLY when
     a task's config sets glmCondC. Renders current.png via
@@ -1067,11 +1188,12 @@ def write_live_update_3way(liveDir, run, vol, runLabel, ref3d, affine,
     os.makedirs(liveDir, exist_ok=True)
     out_png = os.path.join(liveDir, 'current.png')
     cond_txt = f" | {condLabel}" if condLabel else ""
-    title = f"{runLabel} | run {run} | vol {vol}{cond_txt}"
+    title = f"{runLabel} | run {run}" + ("" if header else f" | vol {vol}{cond_txt}")   # recap: no 'vol N'
     try:
         nilearn_stat_png_3way(out_png, ref3d, affine, title, maps, labels, colors,
                               thresh=thresh, n_slices=n_slices, z_cuts=z_cuts,
-                              frame=vol, voxel_traces=voxel_traces, full_xlim=full_xlim)
+                              frame=(None if header else vol), voxel_traces=voxel_traces,
+                              full_xlim=full_xlim, header=header)
     except Exception as e:
         print(f"[live] activation plot skipped: {e}")
 
@@ -1376,6 +1498,39 @@ def read_mcflirt_par(par_path):
         return [float(v) for v in row[:6]]
     except Exception:
         return [0.0] * 6
+
+
+def read_mcflirt_par_all(par_path):
+    """Every row of a mcflirt -plots .par file (one row per volume of a 4D series):
+    a list of [rot_x, rot_y, rot_z, trans_x, trans_y, trans_z] float lists, or []
+    if the file is missing/unreadable. (read_mcflirt_par() gives just the LAST row,
+    for the per-volume live path.)"""
+    try:
+        arr = np.atleast_2d(np.loadtxt(par_path))
+        return [[float(v) for v in row[:6]] for row in arr]
+    except Exception:
+        return []
+
+
+def batch_preprocess(func4d_path, ref_path, work_dir, fwhm, motion_correct=True):
+    """The whole-run version of the live path's per-volume preprocessing, in one shot each:
+    mcflirt on the complete 4D series (to `ref_path`, the same first-volume reference the
+    per-volume path uses), then fslmaths gaussian smoothing of the result (`fwhm` in mm --
+    the same '-kernel gauss sigma -fmean' call, which smooths every volume spatially).
+    Returns (smoothed_nifti_path, mcflirt_par_path or None). Needs FSL on PATH; raises
+    RuntimeError on a failed FSL call -- in --recap there is only this one pass, so a
+    silent failure would just produce an empty recap."""
+    from subprocess import call
+    src, par = func4d_path, None
+    if motion_correct:
+        out = os.path.join(work_dir, 'func4d_mc')
+        if call(f"mcflirt -in {func4d_path} -reffile {ref_path} -out {out} -plots", shell=True) != 0:
+            raise RuntimeError("mcflirt failed on the 4D series (see its output above)")
+        src, par = out, out + '.par'
+    sm = os.path.join(work_dir, 'func4d_sm')
+    if call(f"fslmaths {src} -kernel gauss {fwhm / 2.3548} -fmean {sm}", shell=True) != 0:
+        raise RuntimeError("fslmaths smoothing failed on the 4D series (see its output above)")
+    return sm + '.nii.gz', par
 
 
 def write_motion(liveDir, motion_rows, TR=2.0):

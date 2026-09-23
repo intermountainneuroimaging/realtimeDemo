@@ -236,8 +236,13 @@ def main(argv=None):
     # ---- build the volume series ----
     if args.source == 'synthetic':
         events = mrt.read_events_tsv(os.path.join(PROJECT_ROOT, 'study_design', events_file))
-        last = max(o + d for o, d, _ in events)
-        nVols = args.nvols or int(np.ceil((last + 10) / TR))
+        # the run length the config prescribes (scanTime / nVols) -- what a real scan of this task
+        # acquires -- else the events end + 10 volumes of headroom, as taskActivation.py assumes
+        def _num(key, cast):
+            v = str(cfg.get(key, '') or '').strip()
+            return cast(v) if v else cast(0)
+        nVols = args.nvols or mrt.resolve_nvols(
+            TR, events, n_vols=_num('nVols', int), scan_time=_num('scanTime', float))[0]
         series, _ = synthetic_series(events, nVols, TR, condA, condB, shape, condC=condC)
         _condc_txt = f" condC={condC}" if condC else ""
         print(f"[mock] synthetic {task}: {nVols} vols, condA={condA} condB={condB}{_condc_txt}")

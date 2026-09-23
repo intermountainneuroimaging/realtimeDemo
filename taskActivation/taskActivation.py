@@ -17,6 +17,10 @@ Each volume writes outDir/live/current.png with:
 and at the END of the run two more rows are added: the measured vs HRF-predicted
 timecourse at the peak voxel for condA and condB. A live head-motion plot
 (motion.png + motion_display.py) and a web Data Plots ROI trace are also produced.
+With --recap there is no per-frame work at all: the volumes are only fetched as they
+arrive, then motion correction, smoothing, the mask and the GLM run once on the whole
+series, giving one motion.png and one recap image (the final overlay + traces, under a
+header with the screens the participant saw) in outDir/recaps/ and as current.png.
 
 Defaults to the ds000244 (Individual Brain Charting) "HcpMotor" task design
 (LEFT/RIGHT hand blocks, TR = 2.0 s) as the event timing template; see
@@ -118,6 +122,19 @@ ap.add_argument('--save-gif', action='store_true',
                      "for the 3-way one-vs-rest tasks (checkerboard_3cond) -- that mode's "
                      "live bundles aren't written in the single-contrast format this GIF "
                      "builder understands, so there's nothing to assemble either way.")
+ap.add_argument('--recap', action='store_true',
+                help="OPT-IN -- BATCH mode, no frame-by-frame work at all: every volume is just "
+                     "fetched as it arrives, then motion correction, smoothing, the brain mask, "
+                     "the %% change and the GLM each run ONCE on the whole series when the last "
+                     "volume is in, producing ONE motion plot (outDir/live/motion.png) and ONE "
+                     "recap image -- the brain overlay + measured-vs-HRF-predicted trace rows "
+                     "current.png shows, fit on the whole run, under a header with the screens the "
+                     "participant saw -- saved as outDir/recaps/recap_<task>_run<N>.png and shown "
+                     "in the live viewer as current.png (which keeps the task's pre-data template "
+                     "until then). Much faster than the per-volume path, but nothing is shown "
+                     "until the run ends, and the per-volume Data Plots trace is not produced. "
+                     "No per-frame bundles are written, so --save-gif is ignored with a warning; "
+                     "--skip-motion-correction still applies (no motion outputs then).")
 args = ap.parse_args(None)
 cfg = loadConfigFile(args.config)
 
@@ -147,6 +164,7 @@ if args.skip_motion_correction:
 AUTO_TR_TIMEOUT = 30.0     # seconds to wait for the first real DICOM to infer TR from
 HRF_DELAY_SECONDS = 4.0    # canonical hemodynamic peak lag; hrf_delay (in volumes) = this / TR
 NVOLS_FALLBACK_PADDING = 10  # extra volumes of headroom if nVols has to be estimated from events
+                             # (only when the toml sets neither scanTime nor nVols -- see resolve_nvols)
 SUBJECT_NUM = 1            # BIDS 'subject' entity tag for the stream/archive (bookkeeping only)
 DEFAULT_N_SLICES = 6       # axial mosaic slice count when zCuts is empty
 LIVE_UPDATE_MAX_LAG_TRS = 2.0  # skip current.png's nilearn render (the single most expensive
@@ -206,6 +224,11 @@ if args.z_cuts is not None:
 baselineFramesCfg = _cfg_opt('baselineFrames', -1, int)  # -1 = auto (frames before 1st event)
 saveGif = args.save_gif                                 # replay-able activation GIF at end of run --
                                                          # CLI-only opt-in (default off), see --save-gif
+recapMode = args.recap                                  # end-of-run recap image INSTEAD of per-frame
+                                                         # plotting -- CLI-only opt-in, see --recap
+if recapMode and saveGif:
+    print("[recap] --save-gif ignored: --recap skips the per-frame bundles the GIF is built from.")
+    saveGif = False
 gifFps = _cfg_opt('gifFps', 8, int)                     # GIF playback speed (frames/sec)
 dicomTimeout = _cfg_opt('dicomTimeout', 30.0, float)    # seconds to wait per volume before raising
                                                          # -- rtCommon's own default is only 5s, too
@@ -233,11 +256,14 @@ print(f"Motion viewer: open {motionViewerPath} for the same, watching motion.png
 # Show this task's pre-data template (templates/current_<config name>.png, made by
 # utils/make_templates.py) as current.png until the first real frame replaces it.
 # No template for this config (e.g. the default taskActivation.toml) -> just skip.
-_templatePng = os.path.join(currPath, 'templates',
-                            f"current_{os.path.splitext(os.path.basename(args.config))[0]}.png")
+taskStem = os.path.splitext(os.path.basename(args.config))[0]   # conf/<task>.toml -> '<task>'
+_templatePng = os.path.join(currPath, 'templates', f"current_{taskStem}.png")
 if mrt.install_template_png(liveDir, _templatePng):
     print(f"Template current.png installed ({os.path.basename(_templatePng)}) -- "
           f"replaced by the real activation view once data arrive.")
+if recapMode:
+    print("[recap] --recap: batch mode -- no per-frame processing or plots; the template above stays "
+          "in the viewer until the run ends, then one recap image replaces it.")
 eventsPath = os.path.join(currPath, 'study_design', str(cfg.eventsFile))
 
 print(f"\n----{cfg.title}  [task={taskName}]  A={condAName} B={condBName}  run={curRun}----\n")
@@ -266,16 +292,22 @@ streamId = bidsInterface.initDicomBidsStream(dicomPath, dicomScanNamePattern,
                                                 'task': cfg.taskName})
 try:
     nVols = int(bidsInterface.getNumVolumes(streamId))
+    nVolsHow = "reported by the stream"
 except Exception:
-    # the stream couldn't report its own length -- estimate from the events
-    # file itself (whatever task/design is actually loaded) plus headroom
-    lastEventEnd = max(o + d for o, d, _ in events_rows)
-    nVols = int(np.ceil(lastEventEnd / TR)) + NVOLS_FALLBACK_PADDING
-    print(f"[warn] stream did not report its volume count; estimated nVols={nVols} "
-          f"from the events file (last event ends {lastEventEnd:.1f}s) + "
-          f"{NVOLS_FALLBACK_PADDING} volumes headroom.")
+    # a live DICOM stream can't report its own length (it raises here every time) -- take the
+    # count the config prescribes (scanTime / nVols), else estimate it from the events file
+    nVols, nVolsHow = mrt.resolve_nvols(
+        TR, events_rows, n_vols=_cfg_opt('nVols', 0, int), scan_time=_cfg_opt('scanTime', 0.0, float),
+        padding=NVOLS_FALLBACK_PADDING)
+    _lastEnd = max(o + d for o, d, _ in events_rows)
+    if nVols * TR < _lastEnd - TR:
+        print(f"[warn] the prescribed {nVols} volumes ({nVols * TR:.1f}s) end before the design's "
+              f"last event ({_lastEnd:.1f}s) -- check scanTime/nVols against the events file.")
+    if nVolsHow.startswith('estimated'):
+        print(f"[warn] {nVolsHow}. If the scanner stops short of {nVols} volumes the run stalls at "
+              f"the end and aborts after dicomTimeout, before the final plot/recap/GIF.")
 
-print(f"Data source: dicom | volumes: {nVols}")
+print(f"Data source: dicom | volumes: {nVols} ({nVolsHow})")
 # fixed (0, expected-run-duration) x-axis for the trace/motion plots, so they
 # don't grow/rescale frame to frame -- based on nVols, the expected number of
 # TRs, not however much data has arrived so far.
@@ -429,7 +461,110 @@ firstRefVol = 1
 
 
 
-for vol in range(1, nVols + 1):
+def _freeze_baseline(pre_baseline_imgs):
+    """Build the brain mask from the AVERAGE of the baseline (pre-task) volumes and freeze the
+    baseline image -- shared by the per-volume live loop (called the moment volume `baselineN`
+    arrives) and --recap's one-shot batch pass. `pre_baseline_imgs`: the baselineN smoothed
+    volumes as flat arrays. Returns (brain_mask_flat, ref3d, mask_idx, Yglm, baseline_mean),
+    with the first baselineN rows of the GLM signal buffer Yglm already filled."""
+    baseline_mean_full = np.mean(pre_baseline_imgs, axis=0)
+    baseline_img_path = tmpPath + "/baselineRef.nii"
+    nib.save(nib.Nifti1Image(baseline_mean_full.reshape(vol_shape).astype(np.float32), affine),
+             baseline_img_path)
+    # ---- BET skull-strip -> nilearn EPI -> threshold, on the baseline average ----
+    brain_mask_flat, mask_method = mrt.make_brain_mask(
+        baseline_img_path, baseline_mean_full.reshape(vol_shape), affine, vol_shape,
+        method=maskMethod, frac=maskFrac, maskFraction=maskFraction,
+        maskPercentile=maskPercentile, work_dir=tmpPath)
+    frac = 100.0 * brain_mask_flat.mean()
+    print(f"Brain mask: {mask_method} on the {baselineN}-volume baseline average "
+          f"-> {int(brain_mask_flat.sum())} voxels ({frac:.1f}% of FOV)")
+    if frac < 3.0 or frac > 75.0:
+        print("  [warn] mask coverage looks off — inspect outDir/live/brain_mask.nii.gz; "
+              "try maskMethod='bet'/'epi'/'threshold', or tune maskFrac.")
+    try:
+        nib.save(nib.Nifti1Image(brain_mask_flat.reshape(vol_shape).astype(np.uint8), affine),
+                 os.path.join(liveDir, 'brain_mask.nii.gz'))
+    except Exception:
+        pass
+    # the (UNMASKED) baseline average doubles as the display background --
+    # higher SNR than any single frame, and showing the full image (not
+    # just what the brain mask kept) makes it easy to visually spot a
+    # mask that's too tight/loose against the real anatomy underneath it.
+    # The mask itself is still overlaid separately in brain_mask.nii.gz;
+    # only the STATS (GLM/%-change) are restricted to it, never the
+    # underlay.
+    ref3d = baseline_mean_full.reshape(vol_shape)
+    mrt.write_reference(liveDir, ref3d, affine)
+    mask_idx = np.where(brain_mask_flat)[0]
+    Yglm = np.zeros((nVols, mask_idx.size), np.float32)   # GLM signal buffer
+    for i, raw in enumerate(pre_baseline_imgs):
+        Yglm[i] = (raw * brain_mask_flat)[mask_idx]        # backfill the buffered volumes
+    baseline_mean = baseline_mean_full * brain_mask_flat
+    print(f"Baseline image frozen from the first {baselineN} (rest) volumes.")
+    return brain_mask_flat, ref3d, mask_idx, Yglm, baseline_mean
+
+
+plot_queue = plot_proc = None   # the background render worker starts with volume 1 (per-volume path only)
+
+if recapMode:
+    # ---- --recap: NO frame-by-frame work. Fetch every volume as it arrives (rt-cloud's DICOM ->
+    #      NIfTI conversion is the only per-volume step), then do motion correction, smoothing,
+    #      the brain mask, the % change and the GLM ONCE on the whole series, and let the end-of-
+    #      run block below render one recap. Same math as the per-volume loop, applied in bulk. ----
+    print("[recap] batch mode: fetching every volume first, then ONE motion-correction / smoothing / "
+          "GLM pass at the end (no per-frame processing or plots).")
+    raw4d = None
+    for vol in range(1, nVols + 1):
+        print(f'--- {taskName} | fetching vol {vol}/{nVols} ---')
+        niftiObject = fetch_volume(vol)
+        if vol == firstRefVol:
+            nib.save(niftiObject, tmpPath + "/funcRef.nii")
+            ref_img = nib.load(tmpPath + "/funcRef.nii")
+            affine = ref_img.affine; vol_shape = ref_img.shape
+            if len(vol_shape) > 3 and all(s == 1 for s in vol_shape[3:]):   # trailing singleton dim
+                vol_shape = vol_shape[:3]                                    # (see the per-volume loop)
+            raw4d = np.zeros(tuple(vol_shape) + (nVols,), np.float32)
+        raw4d[..., vol - 1] = np.asarray(niftiObject.dataobj, np.float32).reshape(vol_shape)
+    nib.save(nib.Nifti1Image(raw4d, affine), tmpPath + "/func4d.nii")
+    del raw4d
+    smoothPath, parPath = mrt.batch_preprocess(
+        tmpPath + "/func4d.nii", tmpPath + "/funcRef.nii", tmpPath, fwhm,
+        motion_correct=not args.skip_motion_correction)
+    smooth4d = nib.load(smoothPath).get_fdata(dtype=np.float32).reshape(tuple(vol_shape) + (nVols,))
+    if parPath:
+        motion_rows = [[v + 1] + row for v, row in enumerate(mrt.read_mcflirt_par_all(parPath))]
+        mrt.write_motion(liveDir, motion_rows, TR=TR)
+        mrt.write_motion_png(liveDir, motion_rows, TR=TR, nVols=nVols)   # the ONE motion.png of this run
+    print(f"[recap] all {nVols} volumes " + ("smoothed (motion correction skipped)" if not parPath
+          else "motion-corrected and smoothed") + " in one pass.")
+
+    brain_mask_flat, ref3d, mask_idx, Yglm, baseline_mean = _freeze_baseline(
+        [smooth4d[..., i].reshape(-1) for i in range(baselineN)])
+    for vol in range(1, nVols + 1):
+        cond = int(design[(vol - 1) - hrf_delay]) if (vol - 1 - hrf_delay) >= 0 else mrt.IGNORE
+        img_flat = smooth4d[..., vol - 1].reshape(-1) * brain_mask_flat
+        if vol > baselineN:                              # the baseline rows were filled by the freeze
+            Yglm[vol - 1] = img_flat[mask_idx]
+        if vol >= baselineN:                             # % change from baseline + ROI, as in the loop
+            psc = mrt.percent_change(img_flat, baseline_mean, brain_mask_flat)
+            psc3d = psc.reshape(vol_shape)
+            if vol in firstBlockVols:
+                fb_sum = psc.copy() if fb_sum is None else fb_sum + psc
+                fb_n += 1
+            if roi_peak is None and fb_n > 0 and vol >= lastFirstBlockVol:
+                roi_peak = mrt.peak_voxel((fb_sum / fb_n).reshape(vol_shape),
+                                          brain_mask_flat.reshape(vol_shape))
+                print(f"ROI = peak %change voxel of first '{firstLabel}' block @ {roi_peak}")
+            roi_psc = float(psc3d[roi_peak]) if roi_peak is not None else 0.0
+            glob_psc = float(psc[brain_mask_flat].max()) if brain_mask_flat.any() else 0.0
+        else:
+            roi_psc = glob_psc = 0.0
+        roi_trace.append(roi_psc); glob_trace.append(glob_psc); cond_trace.append(cond)
+    del smooth4d
+
+
+for vol in ([] if recapMode else range(1, nVols + 1)):   # --recap did all of this in bulk above
     cond = int(design[(vol - 1) - hrf_delay]) if (vol - 1 - hrf_delay) >= 0 else mrt.IGNORE
     print(f'--- {taskName} | vol {vol}/{nVols} | cond {cond} ---')
 
@@ -483,41 +618,7 @@ for vol in range(1, nVols + 1):
     if vol <= baselineN:
         pre_baseline_imgs.append(img_flat_raw)
     if vol == baselineN:
-        baseline_mean_full = np.mean(pre_baseline_imgs, axis=0)
-        baseline_img_path = tmpPath + "/baselineRef.nii"
-        nib.save(nib.Nifti1Image(baseline_mean_full.reshape(vol_shape).astype(np.float32), affine),
-                 baseline_img_path)
-        # ---- BET skull-strip -> nilearn EPI -> threshold, on the baseline average ----
-        brain_mask_flat, mask_method = mrt.make_brain_mask(
-            baseline_img_path, baseline_mean_full.reshape(vol_shape), affine, vol_shape,
-            method=maskMethod, frac=maskFrac, maskFraction=maskFraction,
-            maskPercentile=maskPercentile, work_dir=tmpPath)
-        frac = 100.0 * brain_mask_flat.mean()
-        print(f"Brain mask: {mask_method} on the {baselineN}-volume baseline average "
-              f"-> {int(brain_mask_flat.sum())} voxels ({frac:.1f}% of FOV)")
-        if frac < 3.0 or frac > 75.0:
-            print("  [warn] mask coverage looks off — inspect outDir/live/brain_mask.nii.gz; "
-                  "try maskMethod='bet'/'epi'/'threshold', or tune maskFrac.")
-        try:
-            nib.save(nib.Nifti1Image(brain_mask_flat.reshape(vol_shape).astype(np.uint8), affine),
-                     os.path.join(liveDir, 'brain_mask.nii.gz'))
-        except Exception:
-            pass
-        # the (UNMASKED) baseline average doubles as the display background --
-        # higher SNR than any single frame, and showing the full image (not
-        # just what the brain mask kept) makes it easy to visually spot a
-        # mask that's too tight/loose against the real anatomy underneath it.
-        # The mask itself is still overlaid separately in brain_mask.nii.gz;
-        # only the STATS (GLM/%-change) are restricted to it, never the
-        # underlay.
-        ref3d = baseline_mean_full.reshape(vol_shape)
-        mrt.write_reference(liveDir, ref3d, affine)
-        mask_idx = np.where(brain_mask_flat)[0]
-        Yglm = np.zeros((nVols, mask_idx.size), np.float32)   # GLM signal buffer
-        for i, raw in enumerate(pre_baseline_imgs):
-            Yglm[i] = (raw * brain_mask_flat)[mask_idx]        # backfill the buffered volumes
-        baseline_mean = baseline_mean_full * brain_mask_flat
-        print(f"Baseline image frozen from the first {baselineN} (rest) volumes.")
+        brain_mask_flat, ref3d, mask_idx, Yglm, baseline_mean = _freeze_baseline(pre_baseline_imgs)
 
     if brain_mask_flat is not None:
         img_flat = img_flat_raw * brain_mask_flat
@@ -686,17 +787,55 @@ for vol in range(1, nVols + 1):
 # stop the background plot worker and wait for it to finish whatever it's
 # mid-render on, BEFORE the guaranteed final write below -- otherwise the two
 # could race to write current.png/the live_run*.npz bundle at the same time.
-plot_queue.put(None)
-plot_proc.join(timeout=30)
-if plot_proc.is_alive():
-    print("[plot_worker] did not exit cleanly within 30s -- terminating it.")
-    plot_proc.terminate()
+if plot_proc is not None:   # None under --recap (no per-frame renders, so no worker)
+    plot_queue.put(None)
+    plot_proc.join(timeout=30)
+    if plot_proc.is_alive():
+        print("[plot_worker] did not exit cleanly within 30s -- terminating it.")
+        plot_proc.terminate()
 
 try:
     archive.appendBidsRun(currentBidsRun)
 except Exception as e:
     print(f"[bids] archive append skipped: {e}")
 bidsInterface.closeStream(streamId)
+
+# ---- --recap: what the per-frame block would have left behind for the final plot
+#      below (it was skipped every volume), computed once from the COMPLETE series,
+#      plus the header with the participant's screens. ----
+recapHeader = None
+recapPath = os.path.join(outPath, 'recaps', f"recap_{taskStem}_run{curRun}.png")
+_curPng = os.path.join(liveDir, 'current.png')
+_curPngStamp = os.stat(_curPng).st_mtime_ns if os.path.exists(_curPng) else None   # the template's
+if recapMode:
+    def _embed_full(m):
+        if m is None:
+            return None
+        flat = np.zeros(brain_mask_flat.size, np.float32)
+        flat[mask_idx] = m
+        return flat.reshape(vol_shape)
+    try:
+        _trace_colors = ['tab:blue', 'tab:red', 'tab:green'] if glmCondC else None
+        _palette = _trace_colors or ['tab:red', 'tab:blue', 'tab:green', 'tab:orange']
+        recapHeader = dict(
+            badge=f"RUN RECAP -- run {curRun}",
+            title=str(cfg.title),
+            subtitle=(f"{nVols} volumes at TR {TR:g} s  |  GLM fit on the complete run  |  "
+                      f"slice heights in scanner mm"),
+            stim_panels=mrt.stim_panels_for(
+                taskStem, os.path.join(currPath, 'templates', 'stimulus_snapshots'),
+                {c: _palette[k % len(_palette)] for k, c in enumerate(conds)}),
+            stim_caption='Shown to the participant')
+        if psc3d is not None and ref3d is not None and Yglm is not None:
+            _run_peak = mrt.peak_voxel(psc3d, brain_mask_flat.reshape(vol_shape))
+            center = (roi_peak if (roi_peak is not None and psc3d[_run_peak] < mapThreshPct)
+                      else _run_peak)
+            if not glmCondC:
+                contrast3d = _embed_full(mrt.glm_beta_contrast(
+                    Xglm, Yglm, glm_names, condA=glmCondA, condB=(glmCondB or None),
+                    zscore=glmZscore))
+    except Exception as e:
+        print(f"[recap] couldn't prepare the recap inputs: {e}")
 
 # ---- end of run: guaranteed final peak-voxel plot using the COMPLETE series
 #      (the per-frame writes above already show these rows live throughout the
@@ -727,7 +866,7 @@ try:
                 maps=final_maps, labels=(glmCondA, glmCondB, glmCondC),
                 colors=('Blues', 'Reds', 'Greens'), thresh=contrastThresh,
                 condLabel=condLabel, n_slices=nSlices, z_cuts=(zCuts or None),
-                voxel_traces=vtraces, full_xlim=fullXlim)
+                voxel_traces=vtraces, full_xlim=fullXlim, header=recapHeader)
             print(f"Final current.png includes peak-voxel HRF fits for: "
                   f"{[t['title'].split(' peak')[0] for t in vtraces]}")
         else:
@@ -742,7 +881,8 @@ try:
             traceALabel=f'ROI ({firstLabel}) %\u0394S', traceBLabel='whole-brain peak %\u0394S',
             contrast3d=contrast3d, contrast_thresh=contrastThresh, condLabel=condLabel,
             n_slices=nSlices, z_cuts=(zCuts or None), contrast_label=glmLabel,
-            voxel_traces=vtraces, full_xlim=fullXlim)
+            voxel_traces=vtraces, full_xlim=fullXlim, header=recapHeader,
+            bundle=(not recapMode))
         print(f"Final current.png includes peak-voxel HRF fits for: "
               f"{[t['title'].split(' peak')[0] for t in vtraces]}")
     elif vtraces:
@@ -750,6 +890,16 @@ try:
               "run too short) \u2014 skipping the peak-voxel HRF plot.")
 except Exception as e:
     print(f"[final] peak-voxel HRF plot skipped: {e}")
+
+if recapMode:
+    # the final block above rendered the recap into liveDir/current.png (so the viewer
+    # shows it); keep a copy that outlives the next run's current.png -- but only if that
+    # render actually happened (otherwise current.png is still the pre-data template)
+    _rendered = os.path.exists(_curPng) and os.stat(_curPng).st_mtime_ns != _curPngStamp
+    if recapHeader is not None and _rendered and mrt.copy_png_atomic(_curPng, recapPath):
+        print(f"Recap image saved to {recapPath} (also shown in the live viewer as current.png).")
+    else:
+        print("[recap] no recap image was written -- see the messages above.")
 
 # ---- end of run: assemble every saved live_run{curRun}_vol*.npz bundle into a
 #      replay-able GIF of the whole run's activation maps (opt-in only --

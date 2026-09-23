@@ -59,6 +59,40 @@ Docker, no dcm2niix, no real scanner) and confirms:
 python testing/test_mock_scanner.py
 ```
 
+## 3a. `testing/test_recap.py` — offline, the `--recap` end-of-run image
+
+Renders the end-of-run recap image (see
+[README.md](README.md#end-of-run-recap-image---recap)) from a synthetic run on
+the MNI152 template, using the same rendering functions `current.png` uses, and
+checks that it is the live layout plus exactly the header band with the
+participant's screens (both the single-contrast and the 3-way renderer), that
+the plot below the header is unchanged, that `--recap` leaves no replay
+bundle behind while the normal path still writes one, that a missing
+stimulus snapshot degrades to a shorter strip instead of failing, and that a
+whole-series mcflirt `.par` file gives the single `motion.tsv`/`motion.png`. Needs
+nilearn/matplotlib only — the `--recap` batch pass itself (4D mcflirt, smoothing, mask,
+GLM) needs FSL, so check it by running `./quickstart.sh <task> --recap` against the mock
+scanner (section 4).
+
+```bash
+python testing/test_recap.py
+```
+
+## 3b. `testing/test_nvols.py` — offline, how many volumes a run expects
+
+A live DICOM stream can't report its own length, so the run works out the count
+itself — from `scanTime` (or `nVols`) in the task's toml, else an events-file
+estimate — and waits for every volume up to it; too high a count stalls the end of
+the run until `dicomTimeout` and aborts it before the final plot/recap/GIF. This
+checks the precedence and rounding of that count, that each shipped task config's
+`scanTime` equals its events file's last event end (so they can't drift), the
+resulting counts (e.g. motor: 250 volumes at TR 1 s, 125 at TR 2 s), and that
+`mock_scanner.py` writes exactly the prescribed number of DICOMs.
+
+```bash
+python testing/test_nvols.py
+```
+
 ## 4. Mock scanner DICOM streaming — the full pipeline, Docker + live path, no real scanner
 
 This is the one that exercises the real container end to end: rt-cloud's
@@ -147,7 +181,7 @@ for #4's docker run, but with your real scanner in place of `mock_scanner.py`.
 ## Interpreting failures
 
 The offline tests (`tutorial/test_pipeline.py`, `tutorial/test_generalize.py`,
-`testing/test_mock_scanner.py`) each print one `[PASS]`/`[FAIL]` line per check and a
+`testing/test_mock_scanner.py`, `testing/test_recap.py`, `testing/test_nvols.py`) each print one `[PASS]`/`[FAIL]` line per check and a
 final `RESULT: ALL PASS` / `RESULT: SEE FAILURES`, then exit 0/1 accordingly —
 safe to wire into CI or a pre-flight script. The Docker-based check (#4)
 doesn't have a formal pass/fail signal; "it processed every volume without a

@@ -27,6 +27,12 @@ skipping current.png's render on volumes where the run has fallen too far
 behind real scanner time (see its --help) -- use this for a replay/offline
 run where keeping every frame matters more than staying caught up.
 
+Pass --recap for a BATCH run with no frame-by-frame work: volumes are only fetched
+as they arrive, then motion correction, smoothing and the GLM run once at the end,
+giving ONE motion plot and ONE recap image (the final brain overlay + measured-vs-
+predicted traces, under a header showing the screens the participant saw) -- see
+taskActivation.py's --help; saved to outDir/recaps/recap_<task>_run<N>.png.
+
 Pass --skip-motion-correction to skip mcflirt entirely (testing/demo only --
 see taskActivation.py's --help for the real accuracy tradeoff this makes).
 
@@ -92,6 +98,11 @@ def main():
                      help="OPT-IN, testing/demo only -- skip mcflirt (real accuracy tradeoff, "
                           "see taskActivation.py's --help) -- forwarded straight to its own "
                           "--skip-motion-correction")
+    ap.add_argument('--recap', action='store_true',
+                     help="OPT-IN -- batch mode: no frame-by-frame processing or plots; one "
+                          "motion plot and one end-of-run recap image (final overlay + traces + "
+                          "the screens the participant saw) -- forwarded straight to "
+                          "taskActivation.py's own --recap; see its --help for details")
     ap.add_argument('--save-gif', action='store_true',
                      help="OPT-IN -- assemble a replay-able activation GIF at end of run "
                           "(off by default) -- forwarded straight to taskActivation.py's own "
@@ -111,6 +122,8 @@ def main():
         cmd += ['--skip-motion-correction']
     if args.save_gif:
         cmd += ['--save-gif']
+    if args.recap:
+        cmd += ['--recap']
     z_cuts = Z_CUTS.get(args.task)
     if z_cuts:
         # --z-cuts=value (one token), not ['--z-cuts', value] -- a value

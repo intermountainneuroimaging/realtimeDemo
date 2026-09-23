@@ -283,6 +283,23 @@ mid-scan). If nothing arrives within `dicomTimeout`, you get a clear
 raw rtCommon traceback. Raise `dicomTimeout` further if your site's startup
 delay routinely runs longer.
 
+**3. Tell the run how long the scan is.** A live DICOM stream can't report how
+many volumes it will contain, so the run has to be told, and it waits for every
+volume up to that count. Each task config therefore sets `scanTime` — the total
+scan length in seconds (the design's last event end: motor and motor_guessing
+250, checkerboard_1cond 260, checkerboard_2cond 204, checkerboard_3cond 300,
+gambling 298.206) — and the run expects `floor(scanTime / TR)` volumes, with TR
+read from the scanner's own first DICOM (250 volumes for motor at TR 1 s, 125 at
+TR 2 s). It then finishes — final plot, `--recap` image, GIF — the moment the
+last volume is in. To force an exact count instead, set `nVols = <count>` in
+the toml (it wins over `scanTime`). With **neither** set (your own task config)
+the run estimates `ceil(last event end / TR) + 10` volumes; that only works if
+the scanner really acquires the 10 extra. If it stops short, the run waits at
+the missing volume, aborts after `dicomTimeout`, and the final plot, recap and
+GIF are never written — so set `scanTime` for any task you add.
+`testing/test_nvols.py` checks each shipped config's `scanTime` against its
+events file and that `mock_scanner.py` writes exactly that many volumes.
+
 **Other subjects/runs/tasks:** point `taskName` + `eventsFile` at your own
 design (see [How it works](#how-it-works)), and set `dicomNamePattern` +
 `runNum` to match what `dicom_bridge.py` / your scanner actually writes.
@@ -300,6 +317,7 @@ The nilearn brain plot is not automatic — nothing renders it for you:
 | Browser view of `current.png`, auto-refreshing every 0.5s | `outDir/live/viewer.html` — open directly in any browser, no Python needed |
 | Browser view of `motion.png`, auto-refreshing every 0.5s | `outDir/live/viewer-motion.html` — a separate page, so either view can be watched on its own |
 | Replay of the whole run's activation maps | `outDir/live/activation_run<N>.gif`, written once at the end of the run |
+| One-image recap of the finished run, with the screens the participant saw, plus one motion plot (`--recap`, batch mode) | `outDir/recaps/recap_<task>_run<N>.png` and `outDir/live/motion.png`, written once at the end of the run (the recap is also shown in the viewer as `current.png`) |
 
 The **Data Plots** tab can only render numeric line plots, so the brain image
 cannot go there. Easiest way to see it live: open `outDir/live/viewer.html`
@@ -350,6 +368,54 @@ happens once, after the last volume, and won't interfere with the live
 'while it's running' outputs above. Not supported for `checkerboard_3cond`'s
 task-specific 3-way mode regardless of `--save-gif` — see
 [stimuli_ptb/README.md](stimuli_ptb/README.md#3-way-one-vs-rest-contrast-checkerboard_3cond-only).
+
+### End-of-run recap image (`--recap`)
+
+Pass `--recap` (`./quickstart.sh <task> --recap`, forwarded through
+`run_task.py` to `taskActivation.py`) for a **batch** run with no frame-by-frame
+work: the volumes are only fetched as they arrive, then motion correction,
+smoothing, the brain mask, the % change and the GLM each run **once** on the
+whole series when the last volume is in. You get **one motion plot**
+(`outDir/live/motion.png`, with `motion.tsv`) and **one GLM recap image**: the
+final brain overlay and the measured-vs-HRF-predicted trace rows — the same
+figure `current.png` ends a normal run on, fit on the whole run — under a header
+showing **the screens the participant saw** (the same PsychoPy snapshots,
+colour-matched to each condition's trace, that the pre-data template uses; a task
+with no snapshots just gets the title). The header sits above the usual layout,
+so the brain mosaic and traces keep their proportions.
+
+```bash
+./quickstart.sh checkerboard_2cond --run 9 --recap
+```
+
+- The recap is saved as `outDir/recaps/recap_<task>_run<N>.png` and also swapped
+  in as `outDir/live/current.png`, so an open `viewer.html` shows it. Until the
+  run ends the viewer keeps the task's pre-data template.
+- **What's skipped:** everything per volume except fetching it — no
+  per-volume motion correction, smoothing or GLM refit, no per-frame
+  `current.png`/`motion.png`, no `live_run*.npz` bundles, and no per-volume Data
+  Plots trace. The batch result matches the per-volume path: on a mock scan the
+  same peak voxels and betas, and mcflirt on the whole 4D series agrees with
+  per-volume mcflirt to within 0.03 mm (on a test series with up to 4.5 mm of
+  motion).
+- **Timing — it is not a shortcut for a live scan.** The fetch (rt-cloud's DICOM →
+  NIfTI conversion, ~0.5 s/volume in the Docker image on an Apple-silicon Mac) still
+  happens once per volume as each arrives, and mcflirt's registration is the same work
+  whether run per volume or on the 4D series (~100 s for 204 volumes there). So in a
+  live scan the whole motion-correction + smoothing pass lands **after the last
+  volume**, and the recap appears roughly that long after the scan ends (about 100 s in
+  that setup), whereas the per-volume path processes as it goes. What `--recap` saves is
+  the per-frame rendering and GLM refits (and the clutter), and it removes the per-volume
+  process overhead when replaying data already on disk. Use it when you want the end result,
+  not the live view.
+- `--save-gif` is ignored with a warning when combined with `--recap`: the GIF
+  is built from the per-frame bundles `--recap` doesn't write.
+- `quickstart.sh` clears `outDir/` at the start of every run, **except**
+  `outDir/recaps/`, so the recaps from a session's runs accumulate there.
+- `--skip-motion-correction` still applies (no motion plot then); `--save-gif` is ignored.
+- `--recap` works for every task, including `checkerboard_3cond`'s three-color
+  map. `testing/test_recap.py` covers the rendering offline (see [TESTING.md](TESTING.md));
+  the batch pass itself needs FSL, so run it in the container.
 
 ### Sample output
 
